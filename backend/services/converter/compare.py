@@ -1,0 +1,107 @@
+"""
+backend/services/converter/compare.py
+=======================================
+다중 모델 병렬 비교 서비스.
+
+흐름:
+  CompareRequest
+    → 각 model_id 마다 convert_single() 병렬 호출 (asyncio.gather)
+    → scorer.py 로 채점
+    → GLM(Ollama)로 AI 종합 평가 생성
+    → CompareResponse 반환
+"""
+import asyncio
+
+from backend.schemas.convert import ConvertRequest, ConvertResponse
+from backend.schemas.compare import CompareRequest, CompareResponse, CompareResult
+from backend.services.converter.single import convert_single
+from backend.services.converter.scorer import score_code
+from backend.services.converter.parser import extract_procedure_name
+from backend.llm.client import get_model_meta, get_adapter
+from backend.fewshot.builder import build_eval_prompt
+from backend.core.logging import get_logger
+
+log = get_logger(__name__)
+SUMMARY_MODEL_ID = "glm-4.7-flash-q4km"
+
+
+# ── AI 종합 평가 ───────────────────────────────────────────
+
+async def _generate_ai_summary(results: list[CompareResult]) -> str:
+    """GLM 이 비교 결과를 분석해 종합 평가 코멘트를 생성합니다."""
+    lines = []
+    for cr in results:
+        label = get_model_meta(cr.convert.model_id).label
+        lines.append(
+            f"- {label}: 총점 {cr.score.total}/100"
+            f", {cr.convert.elapsed_ms or 0}ms"
+            f", {cr.convert.line_count}줄"
+            f", 강점: {', '.join(cr.score.strengths) or '없음'}"
+        )
+    summary_text = "\n".join(lines)
+    user_prompt = build_eval_prompt(summary_text)
+
+    try:
+        adapter = get_adapter(SUMMARY_MODEL_ID)
+        resp = await adapter.complete(
+            system="당신은 모델 비교 평가를 전문적으로 요약하는 한국어 AI 리뷰어입니다.",
+            user=user_prompt,
+        )
+        return resp.text.strip()
+    except Exception as exc:
+        log.warning("AI 종합 평가 생성 실패: %s", exc)
+        # 실패 시 규칙 기반 폴백
+        best = max(results, key=lambda cr: cr.score.total)
+        label = get_model_meta(best.convert.model_id).label
+        return (
+            f"{label}가 총점 {best.score.total}/100으로 가장 우수한 변환 품질을 보였습니다. "
+            f"강점: {', '.join(best.score.strengths) or '없음'}."
+        )
+
+
+# ── 메인 비교 서비스 ───────────────────────────────────────
+
+async def compare_models(req: CompareRequest) -> CompareResponse:
+    """여러 모델을 병렬로 호출해 변환 결과를 비교합니다."""
+    proc_name = extract_procedure_name(req.sql_code)
+
+    # 1) 병렬 변환 호출
+    tasks = [
+        convert_single(ConvertRequest(
+            sql_code=req.sql_code,
+            target_db=req.target_db,
+            model_id=mid,
+        ))
+        for mid in req.model_ids
+    ]
+    convert_results: list[ConvertResponse] = await asyncio.gather(*tasks)
+
+    # 2) 채점
+    compared: list[CompareResult] = [
+        CompareResult(
+            convert=cr,
+            score=score_code(cr.model_id, cr.python_code),
+        )
+        for cr in convert_results
+    ]
+
+    # 3) 우승 모델 결정
+    best = max(compared, key=lambda cr: cr.score.total)
+    winner_meta = get_model_meta(best.convert.model_id)
+
+    # 4) AI 종합 평가
+    ai_summary = await _generate_ai_summary(compared)
+
+    log.info(
+        "비교 완료 — 모델 %d개, 우승: %s (%d점)",
+        len(compared), winner_meta.label, best.score.total,
+    )
+
+    return CompareResponse(
+        success=True,
+        procedure_name=proc_name,
+        results=compared,
+        winner_model=winner_meta.model_id,
+        winner_label=winner_meta.label,
+        ai_summary=ai_summary,
+    )

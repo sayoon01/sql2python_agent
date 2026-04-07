@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SQL2Python Agent</title>
+
+  <!-- 폰트 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
+
+  <!-- 스타일시트 -->
+  <link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     네비게이션
+══════════════════════════════════════════════════ -->
+<nav class="nav">
+  <span class="nav-logo">SQL<span class="nav-logo-accent">2</span>Python</span>
+  <span class="nav-desc">Multi-Model Agent · Few-shot</span>
+
+  <div class="page-tabs">
+    <button class="page-tab active" onclick="showPage('single', this)">단일 변환</button>
+    <button class="page-tab"        onclick="showPage('compare', this)">모델 비교</button>
+  </div>
+</nav>
+
+
+<!-- ══════════════════════════════════════════════════
+     PAGE 1: 단일 변환
+══════════════════════════════════════════════════ -->
+<div id="page-single" class="page active">
+  <div class="single-layout">
+
+    <!-- ── 사이드바 ──────────────────────────────── -->
+    <aside class="sidebar">
+
+      <!-- 모델 선택 -->
+      <section class="sidebar-section">
+        <div class="section-label">모델 선택</div>
+        <div class="model-card-list" id="s-model-cards">
+
+          <div class="model-card selected" data-model-id="glm-4.7-flash-q4km">
+            <div class="model-dot"></div>
+            <div class="model-name">GLM 4.7 Flash (Q4_K_M)</div>
+            <div class="model-prov">Ollama</div>
+          </div>
+
+          <div class="model-card" data-model-id="gemma3-27">
+            <div class="model-dot"></div>
+            <div class="model-name">Gemma3 27B</div>
+            <div class="model-prov">Ollama</div>
+          </div>
+
+          <div class="model-card" data-model-id="qwen2.5coder-32b">
+            <div class="model-dot"></div>
+            <div class="model-name">Qwen2.5 Coder 32B</div>
+            <div class="model-prov">Ollama</div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- DB 선택 -->
+      <section class="sidebar-section">
+        <div class="section-label">Target DB</div>
+        <div class="db-seg" id="s-db-seg">
+          <button class="db-btn active" data-db="mssql">SQL Server · pyodbc</button>
+          <button class="db-btn"        data-db="postgresql">PostgreSQL · psycopg2</button>
+        </div>
+      </section>
+
+      <!-- 출력 옵션 -->
+      <section class="sidebar-section">
+        <div class="section-label">출력 옵션</div>
+
+        <div class="toggle-row">
+          <span class="toggle-label">pytest 테스트 코드</span>
+          <label class="switch">
+            <input type="checkbox" id="s-opt-tests"/>
+            <div class="switch-track"></div>
+            <div class="switch-thumb"></div>
+          </label>
+        </div>
+
+        <div class="toggle-row">
+          <span class="toggle-label">FastAPI 라우터 코드</span>
+          <label class="switch">
+            <input type="checkbox" id="s-opt-router"/>
+            <div class="switch-track"></div>
+            <div class="switch-thumb"></div>
+          </label>
+        </div>
+      </section>
+
+      <!-- 예시 목록 -->
+      <section class="sidebar-section flex-grow">
+        <div class="section-label">예시 프로시저</div>
+        <div class="example-list" id="s-example-list"></div>
+      </section>
+
+      <!-- 최근 입력 -->
+      <section class="sidebar-section">
+        <div class="section-label">최근 입력한 MS SQL</div>
+        <div class="example-list" id="s-recent-list"></div>
+      </section>
+
+    </aside>
+
+    <!-- ── SQL 입력 패널 ─────────────────────────── -->
+    <section class="editor-panel">
+      <div class="panel-header">
+        <span class="panel-label">MS SQL Stored Procedure</span>
+        <button class="btn-sm" onclick="singlePage.clearInput()">지우기</button>
+      </div>
+      <textarea
+        class="sql-textarea"
+        id="s-sql-input"
+        placeholder="CREATE PROCEDURE ...&#10;&#10;여기에 MS SQL 프로시저를 붙여넣으세요."
+      ></textarea>
+    </section>
+
+    <!-- ── Python 출력 패널 ──────────────────────── -->
+    <section class="output-panel">
+      <div class="panel-header">
+        <div class="output-tabs" id="s-output-tabs">
+          <button class="output-tab active">main.py</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="output-meta" id="s-output-meta"></span>
+          <button class="btn-sm" onclick="singlePage.copyOutput()">복사</button>
+        </div>
+      </div>
+      <div class="output-scroll" id="s-output-scroll">
+        <div class="output-placeholder">
+          <div class="output-placeholder-icon">⌥</div>
+          모델을 선택하고 변환 시작을 누르세요
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 액션 바 ────────────────────────────────── -->
+    <footer class="action-bar">
+      <button class="btn-primary" id="s-run-btn" onclick="singlePage.run()">▶ 변환 시작</button>
+      <button class="btn-secondary" onclick="singlePage.clearAll()">초기화</button>
+
+      <div class="status-area">
+        <div class="status-dot" id="s-status-dot"></div>
+        <span class="status-text" id="s-status-text">대기</span>
+        <span class="status-meta" id="s-status-meta"></span>
+      </div>
+    </footer>
+
+  </div><!-- single-layout -->
+</div><!-- page-single -->
+
+
+<!-- ══════════════════════════════════════════════════
+     PAGE 2: 모델 비교
+══════════════════════════════════════════════════ -->
+<div id="page-compare" class="page">
+  <div class="compare-layout">
+
+    <!-- 헤더 -->
+    <div class="compare-header">
+      <div>
+        <div class="compare-title">모델 비교 평가</div>
+        <div class="compare-subtitle">동일한 프로시저를 여러 모델로 동시 변환 후 품질을 자동 채점합니다</div>
+      </div>
+
+      <div class="compare-controls">
+        <!-- 모델 체크박스 -->
+        <div class="model-checks">
+          <label class="model-check-label checked" data-m="glm">
+            <input type="checkbox" value="glm-4.7-flash-q4km" checked/>
+            <div class="check-dot"></div>GLM 4.7 Flash
+          </label>
+          <label class="model-check-label checked" data-m="gemma">
+            <input type="checkbox" value="gemma3-27" checked/>
+            <div class="check-dot"></div>Gemma3 27B
+          </label>
+          <label class="model-check-label checked" data-m="qwen">
+            <input type="checkbox" value="qwen2.5coder-32b" checked/>
+            <div class="check-dot"></div>Qwen2.5 Coder
+          </label>
+        </div>
+
+        <!-- DB 선택 -->
+        <div class="db-seg" id="c-db-seg" style="width:260px">
+          <button class="db-btn active" data-db="mssql">SQL Server</button>
+          <button class="db-btn"        data-db="postgresql">PostgreSQL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SQL 입력 -->
+    <div class="compare-input-card">
+      <div class="compare-input-header">
+        <span class="panel-label">MS SQL Stored Procedure</span>
+        <div class="example-pills" id="c-example-pills"></div>
+      </div>
+      <textarea
+        class="compare-sql"
+        id="c-sql-input"
+        placeholder="CREATE PROCEDURE ..."
+      ></textarea>
+    </div>
+
+    <!-- 실행 + 상태 -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px">
+      <button class="btn-primary" id="c-run-btn" onclick="comparePage.run()">▶ 비교 분석 시작</button>
+      <button class="btn-secondary" onclick="comparePage.clearAll()">초기화</button>
+      <div class="status-area">
+        <div class="status-dot" id="c-status-dot"></div>
+        <span class="status-text" id="c-status-text">대기</span>
+      </div>
+    </div>
+
+    <!-- 로딩 -->
+    <div class="loading-overlay" id="c-loading">
+      <div class="spinner"></div>
+      <div class="loading-text">모델 병렬 호출 중...</div>
+      <div class="loading-detail" id="c-loading-detail"></div>
+    </div>
+
+    <!-- 비교 결과 (초기 숨김) -->
+    <div class="compare-results" id="c-results">
+
+      <!-- AI 종합 평가 -->
+      <div class="ai-summary-card">
+        <div class="ai-summary-header">
+          <span class="ai-badge">AI 평가</span>
+          <span style="font-size:12px;font-weight:600">종합 평가</span>
+          <span class="winner-badge" id="c-winner-badge"></span>
+        </div>
+        <p class="ai-summary-text" id="c-ai-summary"></p>
+      </div>
+
+      <!-- 채점 테이블 -->
+      <div class="score-section">
+        <div class="score-section-title">채점 결과</div>
+        <div class="score-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>모델</th>
+                <th>문법 정확성<br><small style="font-weight:400">/25</small></th>
+                <th>타입 힌트<br><small style="font-weight:400">/20</small></th>
+                <th>SQL 안전성<br><small style="font-weight:400">/20</small></th>
+                <th>예외 처리<br><small style="font-weight:400">/20</small></th>
+                <th>가독성<br><small style="font-weight:400">/15</small></th>
+                <th>총점<br><small style="font-weight:400">/100</small></th>
+                <th>강점 / 약점</th>
+              </tr>
+            </thead>
+            <tbody id="c-score-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 항목별 미니 차트 -->
+      <div class="score-section">
+        <div class="score-section-title">항목별 비교</div>
+        <div class="mini-chart-grid" id="c-mini-chart-grid"></div>
+      </div>
+
+      <!-- 변환 결과 코드 -->
+      <div class="score-section">
+        <div class="score-section-title">변환 결과 코드</div>
+        <div class="result-cards" id="c-result-cards"></div>
+      </div>
+
+    </div><!-- compare-results -->
+
+  </div><!-- compare-layout -->
+</div><!-- page-compare -->
+
+
+<!-- 클라이언트 스크립트 -->
+<script src="/static/js/app.js"></script>
+</body>
+</html>
