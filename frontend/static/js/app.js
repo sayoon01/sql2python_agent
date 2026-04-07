@@ -134,6 +134,11 @@ const utils = {
   copyToClipboard(text) {
     navigator.clipboard.writeText(text ?? '');
   },
+
+  formatElapsed(elapsedMs) {
+    if (!elapsedMs || elapsedMs <= 0) return '';
+    return `${(elapsedMs / 1000).toFixed(1)}초`;
+  },
 };
 
 /* ══════════════════════════════════════════════════════════
@@ -172,7 +177,7 @@ const api = {
    ══════════════════════════════════════════════════════════ */
 const singlePage = (() => {
   const RECENT_SQL_KEY = 'sql2python_recent_sql';
-  const RECENT_SQL_LIMIT = 6;
+  const RECENT_SQL_LIMIT = 5;
   // 상태
   let selectedModelId = CONFIG.models[0].id;
   let selectedDb      = 'mssql';
@@ -317,11 +322,6 @@ const singlePage = (() => {
     if (el) el.textContent = text;
   }
 
-  function _formatElapsed(elapsedMs) {
-    if (!elapsedMs || elapsedMs <= 0) return '';
-    return `${(elapsedMs / 1000).toFixed(1)}s`;
-  }
-
   // ── 퍼블릭 액션 ───────────────────────────────────────
   function clearInput() {
     document.getElementById('s-sql-input').value = '';
@@ -370,12 +370,12 @@ const singlePage = (() => {
       activeTab  = 'main';
       _renderOutputTabs();
       _renderCode();
-      _setOutputMeta(_formatElapsed(data.elapsed_ms));
+      _setOutputMeta(utils.formatElapsed(data.elapsed_ms));
 
       const label = utils.modelLabel(data.model_id);
       const meta  = [
         data.tokens     ? `${data.tokens.toLocaleString()} tokens` : '',
-        _formatElapsed(data.elapsed_ms),
+        utils.formatElapsed(data.elapsed_ms),
       ].filter(Boolean).join(' · ');
 
       _setStatus('ok', `완료 · ${label} · ${data.line_count}줄`, meta);
@@ -465,7 +465,7 @@ const comparePage = (() => {
               <span style="font-weight:500">${utils.esc(label)}</span>
               ${isBest ? '<span style="font-size:10px;color:#15803d;margin-left:4px">★ 1위</span>' : ''}
             </div>
-            ${cr.elapsed_ms ? `<div style="font-size:10px;color:var(--gray-400);font-family:var(--font-mono);margin-top:2px;padding-left:15px">${cr.elapsed_ms}ms · ${cr.line_count}줄</div>` : ''}
+            ${cr.elapsed_ms ? `<div style="font-size:10px;color:var(--gray-400);font-family:var(--font-mono);margin-top:2px;padding-left:15px">${utils.formatElapsed(cr.elapsed_ms)} · ${cr.line_count}줄</div>` : ''}
           </td>
           <td>${utils.scoreBar(s.correctness,    25, color)}</td>
           <td>${utils.scoreBar(s.type_hints,     20, color)}</td>
@@ -521,7 +521,7 @@ const comparePage = (() => {
           <span class="result-model-name">${utils.esc(label)}</span>
           <div class="result-meta">
             ${s ? `<span class="meta-badge">${s.total}/100</span>` : ''}
-            ${cr.elapsed_ms ? `<span class="meta-badge">${cr.elapsed_ms}ms</span>` : ''}
+            ${cr.elapsed_ms ? `<span class="meta-badge">${utils.formatElapsed(cr.elapsed_ms)}</span>` : ''}
             <span class="meta-badge">${cr.line_count}줄</span>
           </div>
           <button class="btn-sm" style="margin-left:6px;font-size:10px;padding:2px 8px"

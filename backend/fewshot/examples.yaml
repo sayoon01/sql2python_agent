@@ -1,0 +1,323 @@
+- title: SELECT 조회
+  sql: |
+    CREATE PROCEDURE GetUserByID
+        @UserID   INT,
+        @IsActive BIT = 1
+    AS
+    BEGIN
+        SET NOCOUNT ON;
+        SELECT UserID, Name, Email, CreatedAt
+        FROM   Users
+        WHERE  UserID   = @UserID
+          AND  IsActive = @IsActive;
+    END
+  python_mssql: |
+    import pyodbc
+    from typing import Optional, Dict, Any
+
+
+    def get_user_by_id(
+        conn: pyodbc.Connection,
+        user_id: int,
+        is_active: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        사용자 단건 조회.
+        원본 SP: GetUserByID
+        """
+        sql = """
+            SELECT UserID, Name, Email, CreatedAt
+            FROM   Users
+            WHERE  UserID   = ?
+              AND  IsActive = ?
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql, (user_id, int(is_active)))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        cols = [col[0] for col in cursor.description]
+        return dict(zip(cols, row))
+  python_pg: |
+    import psycopg2
+    import psycopg2.extras
+    from typing import Optional, Dict, Any
+
+
+    def get_user_by_id(
+        conn: psycopg2.extensions.connection,
+        user_id: int,
+        is_active: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        사용자 단건 조회.
+        원본 SP: GetUserByID
+        참고: 테이블/컬럼명 snake_case 변환, ? → %s
+        """
+        sql = """
+            SELECT user_id, name, email, created_at
+            FROM   users
+            WHERE  user_id   = %s
+              AND  is_active = %s
+        """
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, (user_id, is_active))
+            row = cur.fetchone()
+        return dict(row) if row else None
+
+- title: INSERT + OUTPUT 파라미터
+  sql: |
+    CREATE PROCEDURE CreateOrder
+        @CustomerID  INT,
+        @TotalAmount DECIMAL(18,2),
+        @OrderID     INT OUTPUT
+    AS
+    BEGIN
+        SET NOCOUNT ON;
+        BEGIN TRY
+            INSERT INTO Orders (CustomerID, TotalAmount, OrderDate)
+            VALUES (@CustomerID, @TotalAmount, GETDATE());
+            SET @OrderID = SCOPE_IDENTITY();
+        END TRY
+        BEGIN CATCH
+            RAISERROR('주문 생성 실패', 16, 1);
+        END CATCH
+    END
+  python_mssql: |
+    import pyodbc
+    from datetime import datetime
+
+
+    def create_order(
+        conn: pyodbc.Connection,
+        customer_id: int,
+        total_amount: float,
+    ) -> int:
+        """
+        주문을 생성하고 새 OrderID를 반환합니다.
+        원본 SP: CreateOrder
+        변환 규칙:
+          OUTPUT 파라미터     → return value
+          GETDATE()          → datetime.now()
+          SCOPE_IDENTITY()   → SELECT CAST(SCOPE_IDENTITY() AS INT)
+          TRY/CATCH          → try/except + rollback
+        """
+        sql = """
+            INSERT INTO Orders (CustomerID, TotalAmount, OrderDate)
+            VALUES (?, ?, ?);
+            SELECT CAST(SCOPE_IDENTITY() AS INT) AS NewID;
+        """
+        cursor = conn.cursor()
+        try:
+            cursor.execute(sql, (customer_id, total_amount, datetime.now()))
+            row = cursor.fetchone()
+            conn.commit()
+            return int(row[0]) if row else -1
+        except Exception as exc:
+            conn.rollback()
+            raise RuntimeError(f"주문 생성 실패: {exc}") from exc
+  python_pg: |
+    import psycopg2
+    from datetime import datetime
+
+
+    def create_order(
+        conn: psycopg2.extensions.connection,
+        customer_id: int,
+        total_amount: float,
+    ) -> int:
+        """
+        주문을 생성하고 새 order_id를 반환합니다.
+        원본 SP: CreateOrder
+        변환 규칙:
+          OUTPUT 파라미터   → return value
+          SCOPE_IDENTITY()  → RETURNING order_id (PostgreSQL 방식)
+          GETDATE()         → datetime.now()
+        """
+        sql = """
+            INSERT INTO orders (customer_id, total_amount, order_date)
+            VALUES (%s, %s, %s)
+            RETURNING order_id
+        """
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (customer_id, total_amount, datetime.now()))
+                row = cur.fetchone()
+            conn.commit()
+            return int(row[0]) if row else -1
+        except Exception as exc:
+            conn.rollback()
+            raise RuntimeError(f"주문 생성 실패: {exc}") from exc
+
+- title: 트랜잭션 처리
+  sql: |
+    CREATE PROCEDURE TransferFunds
+        @FromAccountID INT,
+        @ToAccountID   INT,
+        @Amount        DECIMAL(18,2)
+    AS
+    BEGIN
+        BEGIN TRANSACTION;
+        BEGIN TRY
+            UPDATE Accounts SET Balance = Balance - @Amount
+            WHERE  AccountID = @FromAccountID;
+
+            UPDATE Accounts SET Balance = Balance + @Amount
+            WHERE  AccountID = @ToAccountID;
+
+            COMMIT TRANSACTION;
+        END TRY
+        BEGIN CATCH
+            ROLLBACK TRANSACTION;
+            THROW;
+        END CATCH
+    END
+  python_mssql: |
+    import pyodbc
+
+
+    def transfer_funds(
+        conn: pyodbc.Connection,
+        from_account_id: int,
+        to_account_id: int,
+        amount: float,
+    ) -> None:
+        """
+        계좌 간 금액 이체 (트랜잭션 보장).
+        원본 SP: TransferFunds
+        변환 규칙:
+          BEGIN TRANSACTION / COMMIT → conn.commit()
+          ROLLBACK TRANSACTION       → conn.rollback()
+          BEGIN TRY/CATCH            → try/except
+        """
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE Accounts SET Balance = Balance - ? WHERE AccountID = ?",
+                (amount, from_account_id),
+            )
+            cursor.execute(
+                "UPDATE Accounts SET Balance = Balance + ? WHERE AccountID = ?",
+                (amount, to_account_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            raise RuntimeError(f"이체 실패: {exc}") from exc
+  python_pg: |
+    import psycopg2
+
+
+    def transfer_funds(
+        conn: psycopg2.extensions.connection,
+        from_account_id: int,
+        to_account_id: int,
+        amount: float,
+    ) -> None:
+        """
+        계좌 간 금액 이체 (트랜잭션 보장).
+        원본 SP: TransferFunds
+        """
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE accounts SET balance = balance - %s WHERE account_id = %s",
+                    (amount, from_account_id),
+                )
+                cur.execute(
+                    "UPDATE accounts SET balance = balance + %s WHERE account_id = %s",
+                    (amount, to_account_id),
+                )
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            raise RuntimeError(f"이체 실패: {exc}") from exc
+
+- title: CURSOR 루프
+  sql: |
+    CREATE PROCEDURE RecalcAllDiscounts
+        @RatePercent FLOAT
+    AS
+    BEGIN
+        SET NOCOUNT ON;
+        DECLARE @ProductID    INT;
+        DECLARE @BasePrice    DECIMAL(10,2);
+
+        DECLARE cur CURSOR FOR
+            SELECT ProductID, BasePrice FROM Products;
+
+        OPEN cur;
+        FETCH NEXT FROM cur INTO @ProductID, @BasePrice;
+
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            UPDATE Products
+            SET    DiscountPrice = @BasePrice * (1.0 - @RatePercent / 100.0)
+            WHERE  ProductID = @ProductID;
+
+            FETCH NEXT FROM cur INTO @ProductID, @BasePrice;
+        END
+
+        CLOSE cur;
+        DEALLOCATE cur;
+    END
+  python_mssql: |
+    import pyodbc
+
+
+    def recalc_all_discounts(
+        conn: pyodbc.Connection,
+        rate_percent: float,
+    ) -> int:
+        """
+        전체 상품 할인가 재계산.
+        원본 SP: RecalcAllDiscounts
+        변환 규칙:
+          CURSOR + WHILE → fetchall() 후 for 루프
+          (네트워크 왕복 최소화, 성능 우선)
+        반환값: 업데이트된 행 수
+        """
+        cursor = conn.cursor()
+        cursor.execute("SELECT ProductID, BasePrice FROM Products")
+        products = cursor.fetchall()
+
+        updated = 0
+        for product_id, base_price in products:
+            discount = float(base_price) * (1.0 - rate_percent / 100.0)
+            cursor.execute(
+                "UPDATE Products SET DiscountPrice = ? WHERE ProductID = ?",
+                (discount, product_id),
+            )
+            updated += cursor.rowcount
+
+        conn.commit()
+        return updated
+  python_pg: |
+    import psycopg2
+
+
+    def recalc_all_discounts(
+        conn: psycopg2.extensions.connection,
+        rate_percent: float,
+    ) -> int:
+        """
+        전체 상품 할인가 재계산.
+        원본 SP: RecalcAllDiscounts
+        변환 규칙: CURSOR → fetchall() + for 루프
+        반환값: 업데이트된 행 수
+        """
+        updated = 0
+        with conn.cursor() as cur:
+            cur.execute("SELECT product_id, base_price FROM products")
+            products = cur.fetchall()
+
+            for product_id, base_price in products:
+                discount = float(base_price) * (1.0 - rate_percent / 100.0)
+                cur.execute(
+                    "UPDATE products SET discount_price = %s WHERE product_id = %s",
+                    (discount, product_id),
+                )
+                updated += cur.rowcount
+
+        conn.commit()
+        return updated

@@ -33,26 +33,51 @@ def split_sections(raw: str) -> dict[str, str | None]:
     LLM 출력을 [MAIN CODE] / [TEST CODE] / [FASTAPI ROUTER] 로 분리합니다.
     섹션 헤더가 없으면 전체를 MAIN CODE로 취급합니다.
     """
-    sections: dict[str, str | None] = {
-        "main":   raw.strip(),
-        "test":   None,
-        "router": None,
-    }
+    sections: dict[str, str | None] = {"main": raw.strip(), "test": None, "router": None}
 
-    if "[MAIN CODE]" in raw:
-        m = re.search(
-            r"\[MAIN CODE\](.*?)(?=\[TEST CODE\]|\[FASTAPI ROUTER\]|$)",
-            raw, re.DOTALL,
-        )
-        if m:
-            sections["main"] = m.group(1).strip()
+    # 모델별 출력 편차(대괄호/공백/대소문자/접미어)를 흡수하기 위해
+    # 헤더를 느슨하게 인식한 뒤 위치 기반으로 섹션을 자릅니다.
+    header_pattern = re.compile(
+        r"(?im)^\s*\[?\s*(MAIN\s*CODE|TEST\s*CODE|PYTEST\s*CODE|FASTAPI\s*ROUTER(?:\s*CODE)?|SELF\s*CHECK)\s*\]?\s*:?\s*$"
+    )
 
-    m = re.search(r"\[TEST CODE\](.*?)(?=\[FASTAPI ROUTER\]|$)", raw, re.DOTALL)
-    if m:
-        sections["test"] = m.group(1).strip()
+    matches = list(header_pattern.finditer(raw))
+    if not matches:
+        return sections
 
-    m = re.search(r"\[FASTAPI ROUTER\](.*?)$", raw, re.DOTALL)
-    if m:
-        sections["router"] = m.group(1).strip()
+    # 헤더명 정규화
+    def _key(name: str) -> str:
+        n = re.sub(r"\s+", " ", name.strip().upper())
+        if n == "MAIN CODE":
+            return "main"
+        if n in {"TEST CODE", "PYTEST CODE"}:
+            return "test"
+        if n.startswith("FASTAPI ROUTER"):
+            return "router"
+        return "other"
 
+    # 헤더 구간별 본문 추출
+    extracted: dict[str, str] = {}
+    for idx, m in enumerate(matches):
+        start = m.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw)
+        key = _key(m.group(1))
+        chunk = raw[start:end].strip()
+        # 모델이 넣는 수평 구분선 제거
+        chunk = re.sub(r"(?m)^\s*---\s*$", "", chunk).strip()
+        if key in {"main", "test", "router"} and chunk:
+            extracted[key] = chunk
+
+    # MAIN CODE 헤더가 없더라도 TEST/ROUTER 앞부분을 main으로 사용
+    first_start = matches[0].start()
+    leading = raw[:first_start].strip()
+    leading = re.sub(r"(?m)^\s*---\s*$", "", leading).strip()
+
+    if "main" in extracted:
+        sections["main"] = extracted["main"]
+    elif leading:
+        sections["main"] = leading
+
+    sections["test"] = extracted.get("test")
+    sections["router"] = extracted.get("router")
     return sections

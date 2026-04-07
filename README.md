@@ -33,7 +33,7 @@ sql2python/
 │   │
 │   │
 │   ├── fewshot/                         ← ❷-4 퓨샷 레이어
-│   │   ├── examples.py                  │   SQL→Python 변환 예시 데이터 (순수 데이터)
+│   │   ├── examples.yaml                │   SQL→Python 변환 예시 데이터 (순수 데이터)
 │   │   └── builder.py                   │   시스템 프롬프트 조립 (순수 문자열)
 │   │
 │   ├── schemas/                         ← ❷-5 Pydantic 스키마
@@ -71,7 +71,7 @@ sql2python/
 | 공통 | `backend/core/` | 예외·로깅 | 없음 |
 | DB | `backend/db/` | 연결 전환 (mssql↔pg) | pyodbc, psycopg2 |
 | LLM | `backend/llm/` | 모델 호출 추상화 | httpx |
-| 퓨샷 | `backend/fewshot/` | 예시 데이터·프롬프트 | 없음 |
+| 퓨샷 | `backend/fewshot/` | 예시 데이터·프롬프트 | PyYAML |
 | 스키마 | `backend/schemas/` | 요청/응답 타입 | pydantic |
 | 서비스 | `backend/services/` | 변환·채점 로직 | 내부만 |
 | API | `backend/api/` | HTTP 라우팅 | FastAPI |
@@ -101,7 +101,7 @@ ollama pull qwen2.5-coder:32b
 ```bash
 # 1. 환경 설정
 cp config/.env.example config/.env
-# → config/.env 편집: API 키, DB 정보 입력
+# → config/.env 편집: DB 정보 및 OLLAMA_BASE_URL 확인/수정
 
 # 2. (권장) 가상환경 생성/활성화
 python3 -m venv .venv
@@ -146,6 +146,19 @@ DB_MODE=postgresql
   "include_fastapi_router": false
 }
 ```
+
+`include_tests`, `include_fastapi_router` 옵션을 켜면 출력 섹션이 확장됩니다.
+
+- `include_tests=true` → `[TEST CODE]` 섹션 추가 (pytest + unittest.mock)
+- `include_fastapi_router=true` → `[FASTAPI ROUTER]` 섹션 추가 (APIRouter + Pydantic)
+- 둘 중 하나라도 `true`면 `[SELF CHECK]` 섹션이 함께 생성되어 아래 항목을 PASS/FAIL로 점검합니다.
+  - import 누락 없음
+  - 테스트 정상/실패/예외 분리
+  - commit/rollback 검증
+  - execute 호출/인자 검증
+  - 라우터 스키마와 반환 구조 일치
+  - 라우터 예외의 HTTP 오류 변환
+  - 프로젝트 모듈 경로 사용
 
 ### POST /api/compare — 모델 비교
 ```json
