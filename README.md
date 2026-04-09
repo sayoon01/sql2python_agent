@@ -82,28 +82,14 @@ APP_ENV=development
 APP_HOST=0.0.0.0
 APP_PORT=8000
 
-DB_MODE=mssql
-
-MSSQL_SERVER=localhost
-MSSQL_PORT=1433
-MSSQL_DATABASE=mydb
-MSSQL_USERNAME=sa
-MSSQL_PASSWORD=your_password
-MSSQL_DRIVER=ODBC Driver 17 for SQL Server
-
-PG_HOST=localhost
-PG_PORT=5432
-PG_DATABASE=mydb
-PG_USER=postgres
-PG_PASSWORD=your_password
-
 OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 주의:
 
 - 현재 저장소에는 `config/.env.example`이 보이지 않습니다. 문서에만 언급되던 상태였고, 실제로는 직접 `config/.env`를 만들어야 합니다.
-- `DB_MODE`는 `mssql` 또는 `postgresql`만 허용됩니다.
+- 현재 핵심 런타임 기준 필수 설정은 `APP_*`와 `OLLAMA_BASE_URL`입니다.
+- `config/settings.py`에는 DB 관련 설정도 남아 있지만, 현재 앱의 핵심 기능과 헬스체크는 DB 연결을 요구하지 않습니다.
 
 ### 3.3 Ollama 준비
 
@@ -144,14 +130,12 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 이 파일이 프로젝트 전체 설정의 단일 진실 공급원입니다.
 
 - 앱 포트/호스트
-- DB 모드
-- MSSQL 연결 정보
-- PostgreSQL 연결 정보
 - Ollama 주소
+- 레거시 DB 설정 항목
 
 다른 모듈은 직접 환경변수를 읽지 않고 `settings` 객체를 참조합니다.
 
-### 4.2 DB 연결 방식
+### 4.2 DB 관련 코드의 현재 위치
 
 `backend/db/connection.py`가 DB 전환을 담당합니다.
 
@@ -165,8 +149,9 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 중요한 점:
 
 - 변환 기능 자체는 DB 연결 없이도 동작합니다.
-- 하지만 `/api/health`는 실제 DB ping을 수행합니다.
+- 현재 `/api/health`는 DB ping을 수행하지 않습니다.
 - 생성되는 Python 예제 코드는 DB 연결 객체 `conn`을 인자로 받는 형태를 전제로 합니다.
+- 즉, DB 관련 코드는 "생성 결과의 예시 문맥"과 "향후 확장 여지"에 가깝고, 현재 서버 핵심 런타임 의존성은 아닙니다.
 
 ## 5. 요청 흐름
 
@@ -454,9 +439,6 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 - `backend/llm/adapters/ollama_adapter.py`
   Ollama HTTP 호출
 
-- `backend/db/connection.py`
-  DB 연결 전환과 `Depends` 공급
-
 ### 프런트엔드
 
 - `frontend/index.html`
@@ -547,7 +529,7 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 ### 13.9 DB 모드와 생성 코드의 관계
 
-- 앱의 `DB_MODE`는 서버 내부 DB ping/의존성에 영향을 주고,
+- 앱의 `DB_MODE`는 현재 핵심 API 동작에는 직접 영향이 거의 없고,
 - 변환 요청의 `target_db`는 생성 코드 스타일에 영향을 줍니다.
 - 이 둘은 별개인데 사용자 입장에서는 혼동될 수 있습니다.
 - 개선:
@@ -558,7 +540,6 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 - `config/.env`가 준비되었는지
 - Ollama 서버가 살아 있는지
 - 필요한 모델을 모두 pull 했는지
-- SQL Server ODBC 드라이버가 설치되어 있는지
 - `/api/health`가 통과하는지
 - `/api/models`가 기대한 모델 목록을 반환하는지
 - 긴 SQL 입력에서 Ollama 타임아웃이 없는지

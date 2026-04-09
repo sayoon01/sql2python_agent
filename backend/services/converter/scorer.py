@@ -13,8 +13,18 @@ backend/services/converter/scorer.py
   ─────────────────────
   total          /100
 """
+import ast
 import re
+
 from backend.schemas.compare import ScoreDetail
+
+
+def _has_ast_imports(tree: ast.AST) -> bool:
+    return any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in ast.walk(tree))
+
+
+def _has_ast_function(tree: ast.AST) -> bool:
+    return any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in ast.walk(tree))
 
 
 def score_code(model_id: str, code: str) -> ScoreDetail:
@@ -28,13 +38,27 @@ def score_code(model_id: str, code: str) -> ScoreDetail:
             verdict="변환 실패 (0/100)",
         )
 
+    syntax_error = None
+    tree = None
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        syntax_error = f"{exc.msg} (line {exc.lineno})"
+
     # ── 1. 문법 정확성 (25점) ─────────────────────────────
-    c = 0
-    if re.search(r"^def \w+\s*\(", code, re.MULTILINE):    c += 10  # 함수 정의
-    if re.search(r"^import ", code, re.MULTILINE):          c += 5   # import
-    if re.search(r"cursor\.execute\s*\(", code):            c += 5   # DB 실행
-    if re.search(r"conn\.(cursor|commit|rollback)", code):  c += 5   # conn 사용
-    correctness = min(c, 25)
+    if tree is not None:
+        c = 10  # 문법 유효성
+        if _has_ast_function(tree):                           c += 7
+        if _has_ast_imports(tree):                            c += 4
+        if re.search(r"cursor\.execute\s*\(", code):         c += 2
+        if re.search(r"conn\.(cursor|commit|rollback)", code): c += 2
+        correctness = min(c, 25)
+    else:
+        c = 0
+        if re.search(r"^def \w+\s*\(", code, re.MULTILINE):     c += 2
+        if re.search(r"^(from|import) ", code, re.MULTILINE):   c += 2
+        if re.search(r"(cursor\.execute|conn\.)", code):        c += 1
+        correctness = min(c, 5)
 
     # ── 2. 타입 힌트 (20점) ──────────────────────────────
     t = 0
@@ -66,9 +90,14 @@ def score_code(model_id: str, code: str) -> ScoreDetail:
     readability = min(r, 15)
 
     total = correctness + type_hints + sql_safety + error_handling + readability
+    if syntax_error:
+        total = min(total, 39)
 
     # ── 강점 / 약점 ────────────────────────────────────────
     strengths, weaknesses = [], []
+
+    if syntax_error:
+        weaknesses.append(f"Python 문법 오류: {syntax_error}")
 
     if type_hints >= 15:      strengths.append("타입 힌트 완성")
     else:                     weaknesses.append("타입 힌트 부족")
@@ -82,7 +111,8 @@ def score_code(model_id: str, code: str) -> ScoreDetail:
     if readability >= 12:     strengths.append("가독성 우수")
     else:                     weaknesses.append("문서화 부족")
 
-    if correctness >= 20:     strengths.append("기본 구조 정확")
+    if correctness >= 20 and not syntax_error:
+        strengths.append("기본 구조 정확")
 
     grade = (
         "우수" if total >= 80 else

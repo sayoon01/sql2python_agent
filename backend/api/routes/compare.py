@@ -5,7 +5,7 @@ backend/api/routes/compare.py
 
 POST /api/compare
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from backend.schemas.compare import CompareRequest, CompareResponse
 from backend.services.converter.compare import compare_models
@@ -21,7 +21,4 @@ async def compare(req: CompareRequest) -> CompareResponse:
     - **model_ids**: 비교할 모델 ID 목록 (2개 이상)
     - **target_db**: `mssql` | `postgresql`
     """
-    try:
-        return await compare_models(req)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    return await compare_models(req)

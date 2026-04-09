@@ -439,9 +439,26 @@ const comparePage = (() => {
 
   // ── 결과 렌더링 ──────────────────────────────────────
   function _renderResults(data) {
+    const alertEl = document.getElementById('c-compare-alert');
+
     // AI 요약
     document.getElementById('c-ai-summary').textContent = data.ai_summary ?? '';
-    document.getElementById('c-winner-badge').textContent = `🏆 ${data.winner_label}`;
+    document.getElementById('c-winner-badge').textContent =
+      data.winner_label ? `🏆 ${data.winner_label}` : (data.error ?? '우승 모델 없음');
+    alertEl.className = 'compare-alert hidden';
+    alertEl.textContent = '';
+
+    if (!data.success) {
+      const failedLabels = (data.failed_models ?? []).map(id => utils.modelLabel(id)).join(', ');
+      alertEl.className = 'compare-alert';
+      alertEl.textContent = failedLabels
+        ? `전체 실패: ${failedLabels} 변환에 실패했습니다. Ollama 서버 상태와 모델 설치 여부를 확인하세요.`
+        : (data.error ?? '모든 모델 변환이 실패했습니다.');
+    } else if (data.partial_failure) {
+      const failedLabels = (data.failed_models ?? []).map(id => utils.modelLabel(id)).join(', ');
+      alertEl.className = 'compare-alert partial';
+      alertEl.textContent = `부분 실패: ${failedLabels} 변환에 실패했습니다. 아래 결과는 성공한 모델 기준으로 비교되었습니다.`;
+    }
 
     // 채점 테이블
     const bestTotal = Math.max(...data.results.map(r => r.score.total));
@@ -451,19 +468,24 @@ const comparePage = (() => {
     data.results.forEach(({ convert: cr, score: s }) => {
       const color  = utils.modelColor(cr.model_id);
       const label  = utils.modelLabel(cr.model_id);
-      const isBest = s.total === bestTotal;
+      const isBest = data.winner_model
+        ? cr.model_id === data.winner_model
+        : s.total === bestTotal && cr.success;
+      const isFailed = !cr.success;
       const tags   = [
+        ...(isFailed ? ['변환 실패'].map(t => `<span class="tag tag-warn">${utils.esc(t)}</span>`) : []),
         ...s.strengths.slice(0, 2).map(t => `<span class="tag tag-good">${utils.esc(t)}</span>`),
         ...s.weaknesses.slice(0, 1).map(t => `<span class="tag tag-bad">${utils.esc(t)}</span>`),
       ].join('');
 
       tbody.innerHTML += `
-        <tr>
+        <tr class="${isFailed ? 'score-row-failed' : ''}">
           <td>
             <div class="score-model-cell">
               <div style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0"></div>
               <span style="font-weight:500">${utils.esc(label)}</span>
               ${isBest ? '<span style="font-size:10px;color:#15803d;margin-left:4px">★ 1위</span>' : ''}
+              ${isFailed ? '<span class="tag tag-warn">실패</span>' : ''}
             </div>
             ${cr.elapsed_ms ? `<div style="font-size:10px;color:var(--gray-400);font-family:var(--font-mono);margin-top:2px;padding-left:15px">${utils.formatElapsed(cr.elapsed_ms)} · ${cr.line_count}줄</div>` : ''}
           </td>
@@ -512,14 +534,18 @@ const comparePage = (() => {
     data.results.forEach(({ convert: cr, score: s }) => {
       const color  = utils.modelColor(cr.model_id);
       const label  = utils.modelLabel(cr.model_id);
-      const isBest = s.total === bestTotal;
+      const isBest = data.winner_model
+        ? cr.model_id === data.winner_model
+        : s.total === bestTotal && cr.success;
+      const isFailed = !cr.success;
       const card   = document.createElement('div');
-      card.className = 'result-card';
+      card.className = `result-card${isFailed ? ' failed' : ''}`;
       card.innerHTML = `
         <div class="result-card-header">
           <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
           <span class="result-model-name">${utils.esc(label)}</span>
           <div class="result-meta">
+            ${isFailed ? '<span class="meta-badge meta-badge-failed">FAILED</span>' : ''}
             ${s ? `<span class="meta-badge">${s.total}/100</span>` : ''}
             ${cr.elapsed_ms ? `<span class="meta-badge">${utils.formatElapsed(cr.elapsed_ms)}</span>` : ''}
             <span class="meta-badge">${cr.line_count}줄</span>
@@ -571,7 +597,13 @@ const comparePage = (() => {
         model_ids: modelIds,
       });
       _renderResults(data);
-      _setStatus('ok', `완료 · 🏆 ${data.winner_label}`);
+      if (!data.success) {
+        _setStatus('error', data.error ?? '비교 실패');
+      } else if (data.partial_failure) {
+        _setStatus('ok', `부분 완료 · 🏆 ${data.winner_label}`);
+      } else {
+        _setStatus('ok', `완료 · 🏆 ${data.winner_label}`);
+      }
     } catch (err) {
       _setStatus('error', err.message);
     } finally {

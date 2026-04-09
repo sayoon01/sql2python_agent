@@ -508,6 +508,21 @@ pre {
   border: 1px solid #bbf7d0;
   border-radius: var(--r-sm);
 }
+.compare-alert {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+  color: #991b1b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.compare-alert.partial {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
 .ai-summary-text { font-size: 13px; color: var(--gray-600); line-height: 1.7; }
 
 /* 점수 테이블 */
@@ -538,6 +553,7 @@ td {
   border-bottom: 1px solid var(--gray-50);
 }
 tr:last-child td { border-bottom: none; }
+.score-row-failed td { background: #fff8f8; }
 .score-model-cell { display: flex; align-items: center; gap: 7px; }
 .score-bar-wrap { width: 52px; height: 4px; background: var(--gray-100); border-radius: 2px; overflow: hidden; }
 .score-bar { height: 100%; border-radius: 2px; transition: width .4s; }
@@ -552,6 +568,11 @@ tr:last-child td { border-bottom: none; }
 }
 .tag-good { background: #f0fdf4; color: #15803d; }
 .tag-bad  { background: #fff1f2; color: #be123c; }
+.tag-warn {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
 
 /* 미니 바차트 (항목별 비교) */
 .mini-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 12px; margin-top: 12px; }
@@ -573,12 +594,19 @@ tr:last-child td { border-bottom: none; }
   display: flex;
   flex-direction: column;
 }
+.result-card.failed {
+  border-color: #fecaca;
+  background: #fffdfd;
+}
 .result-card-header {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 7px;
+}
+.result-card.failed .result-card-header {
+  border-bottom-color: #fecaca;
 }
 .result-model-name { font-size: 12px; font-weight: 600; color: var(--gray-900); }
 .result-meta { margin-left: auto; display: flex; gap: 5px; }
@@ -589,6 +617,10 @@ tr:last-child td { border-bottom: none; }
   border-radius: 3px;
   background: var(--gray-50);
   color: var(--gray-600);
+}
+.meta-badge-failed {
+  background: #fff1f2;
+  color: #be123c;
 }
 .result-code { flex: 1; max-height: 260px; overflow-y: auto; }
 .result-code pre { font-size: 11px; padding: 12px 14px; }

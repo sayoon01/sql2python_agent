@@ -27,7 +27,10 @@ SUMMARY_MODEL_ID = "glm-4.7-flash-q4km"
 
 # ── AI 종합 평가 ───────────────────────────────────────────
 
-async def _generate_ai_summary(results: list[CompareResult]) -> str:
+async def _generate_ai_summary(
+    results: list[CompareResult],
+    failed_models: list[str] | None = None,
+) -> str:
     """GLM 이 비교 결과를 분석해 종합 평가 코멘트를 생성합니다."""
     lines = []
     for cr in results:
@@ -38,6 +41,8 @@ async def _generate_ai_summary(results: list[CompareResult]) -> str:
             f", {cr.convert.line_count}줄"
             f", 강점: {', '.join(cr.score.strengths) or '없음'}"
         )
+    if failed_models:
+        lines.append(f"- 변환 실패 모델: {', '.join(failed_models)}")
     summary_text = "\n".join(lines)
     user_prompt = build_eval_prompt(summary_text)
 
@@ -53,9 +58,14 @@ async def _generate_ai_summary(results: list[CompareResult]) -> str:
         # 실패 시 규칙 기반 폴백
         best = max(results, key=lambda cr: cr.score.total)
         label = get_model_meta(best.convert.model_id).label
+        failed_note = (
+            f" 변환 실패 모델: {', '.join(failed_models)}."
+            if failed_models else ""
+        )
         return (
             f"{label}가 총점 {best.score.total}/100으로 가장 우수한 변환 품질을 보였습니다. "
             f"강점: {', '.join(best.score.strengths) or '없음'}."
+            f"{failed_note}"
         )
 
 
@@ -85,16 +95,33 @@ async def compare_models(req: CompareRequest) -> CompareResponse:
         for cr in convert_results
     ]
 
+    successful = [item for item in compared if item.convert.success]
+    failed_models = [item.convert.model_id for item in compared if not item.convert.success]
+
+    if not successful:
+        error_message = "모든 모델 변환이 실패했습니다."
+        log.warning("비교 실패 — 모델 %d개 모두 변환 실패", len(compared))
+        return CompareResponse(
+            success=False,
+            procedure_name=proc_name,
+            results=compared,
+            ai_summary=error_message,
+            partial_failure=False,
+            failed_models=failed_models,
+            error=error_message,
+        )
+
     # 3) 우승 모델 결정
-    best = max(compared, key=lambda cr: cr.score.total)
+    best = max(successful, key=lambda cr: cr.score.total)
     winner_meta = get_model_meta(best.convert.model_id)
 
     # 4) AI 종합 평가
-    ai_summary = await _generate_ai_summary(compared)
+    ai_summary = await _generate_ai_summary(successful, failed_models)
+    partial_failure = bool(failed_models)
 
     log.info(
-        "비교 완료 — 모델 %d개, 우승: %s (%d점)",
-        len(compared), winner_meta.label, best.score.total,
+        "비교 완료 — 성공 %d개, 실패 %d개, 우승: %s (%d점)",
+        len(successful), len(failed_models), winner_meta.label, best.score.total,
     )
 
     return CompareResponse(
@@ -104,4 +131,6 @@ async def compare_models(req: CompareRequest) -> CompareResponse:
         winner_model=winner_meta.model_id,
         winner_label=winner_meta.label,
         ai_summary=ai_summary,
+        partial_failure=partial_failure,
+        failed_models=failed_models,
     )

@@ -43,9 +43,12 @@ class CompareResult(BaseModel):
 
 
 class CompareResponse(BaseModel):
-    success:        bool
-    procedure_name: str
-    results:        List[CompareResult]
-    winner_model:   str          # 총점 1위 model_id
-    winner_label:   str          # 총점 1위 표시명
-    ai_summary:     Optional[str] = None
+    success:         bool
+    procedure_name:  str
+    results:         List[CompareResult]
+    winner_model:    Optional[str] = None   # 총점 1위 model_id
+    winner_label:    Optional[str] = None   # 총점 1위 표시명
+    ai_summary:      Optional[str] = None
+    partial_failure: bool = False
+    failed_models:   List[str] = Field(default_factory=list)
+    error:           Optional[str] = None

@@ -8,7 +8,6 @@ GET /api/models
 """
 from fastapi import APIRouter
 
-from backend.db.connection import ping
 from backend.llm.client import list_models
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -16,11 +15,11 @@ router = APIRouter(prefix="/api", tags=["system"])
 
 @router.get("/health")
 def health() -> dict:
-    """앱 + DB 연결 상태 확인."""
+    """앱 상태와 기본 메타데이터 확인."""
     return {
-        "app":    "sql2python",
+        "app": "sql2python",
         "status": "ok",
-        "db":     ping(),
+        "models": len(list_models()),
     }
 
 
