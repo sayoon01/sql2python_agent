@@ -64,6 +64,13 @@ if os.path.isdir(_FRONTEND_DIR):
     if os.path.isdir(_STATIC_DIR):
         app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
+        _FAVICON = os.path.join(_STATIC_DIR, "favicon.ico")
+        if os.path.isfile(_FAVICON):
+
+            @app.get("/favicon.ico", include_in_schema=False)
+            def serve_favicon() -> FileResponse:
+                return FileResponse(_FAVICON, media_type="image/x-icon")
+
     # / → index.html
     @app.get("/", include_in_schema=False)
     def serve_index() -> FileResponse:
