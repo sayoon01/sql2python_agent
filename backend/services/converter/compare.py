@@ -1,17 +1,15 @@
 """
 backend/services/converter/compare.py
 =======================================
-다중 모델 병렬 비교 서비스.
+다중 모델 순차 비교 서비스.
 
 흐름:
   CompareRequest
-    → 각 model_id 마다 convert_single() 병렬 호출 (asyncio.gather)
+    → 각 model_id 마다 convert_single() 순차 호출
     → scorer.py 로 채점
     → GLM(Ollama)로 AI 종합 평가 생성
     → CompareResponse 반환
 """
-import asyncio
-
 from backend.schemas.convert import ConvertRequest, ConvertResponse
 from backend.schemas.compare import CompareRequest, CompareResponse, CompareResult
 from backend.services.converter.single import convert_single
@@ -76,18 +74,17 @@ async def _generate_ai_summary(
 # ── 메인 비교 서비스 ───────────────────────────────────────
 
 async def compare_models(req: CompareRequest) -> CompareResponse:
-    """여러 모델을 병렬로 호출해 변환 결과를 비교합니다."""
+    """여러 모델을 순차 호출해 변환 결과를 비교합니다."""
     proc_name = extract_procedure_name(req.sql_code)
 
-    # 1) 병렬 변환 호출
-    tasks = [
-        convert_single(ConvertRequest(
+    # 1) 순차 변환 호출
+    convert_results: list[ConvertResponse] = []
+    for mid in req.model_ids:
+        convert_result = await convert_single(ConvertRequest(
             sql_code=req.sql_code,
             model_id=mid,
         ))
-        for mid in req.model_ids
-    ]
-    convert_results: list[ConvertResponse] = await asyncio.gather(*tasks)
+        convert_results.append(convert_result)
 
     # 2) 채점
     compared: list[CompareResult] = [

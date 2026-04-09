@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         description="Ollama 로컬 서버 (GLM, Gemma3, Qwen)",
     )
     OLLAMA_TIMEOUT_SECONDS: float = Field(
-        default=180.0,
+        default=240.0,
         description="Ollama 요청 타임아웃(초)",
     )
     OLLAMA_KEEP_ALIVE: str = Field(

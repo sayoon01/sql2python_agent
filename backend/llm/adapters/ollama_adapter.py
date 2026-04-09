@@ -25,6 +25,13 @@ _OLLAMA_MODEL_MAP = {
 }
 
 
+def _format_exception_detail(exc: Exception) -> str:
+    """로그와 API 응답에 넣을 예외 요약 문자열."""
+    exc_type = type(exc).__name__
+    message = str(exc).strip()
+    return f"{exc_type}: {message}" if message else exc_type
+
+
 class OllamaAdapter(BaseLLMAdapter):
 
     def __init__(self, model_id: str) -> None:
@@ -59,8 +66,19 @@ class OllamaAdapter(BaseLLMAdapter):
                 f"Ollama 서버에 연결할 수 없습니다 ({self._base_url}). "
                 "'ollama serve' 가 실행 중인지 확인하세요.",
             )
+        except httpx.TimeoutException as exc:
+            raise LLMError(
+                self._model_id,
+                f"{type(exc).__name__}: {settings.OLLAMA_TIMEOUT_SECONDS}초 내 응답 없음",
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            raise LLMError(
+                self._model_id,
+                f"{type(exc).__name__}: Ollama HTTP {status_code}",
+            ) from exc
         except Exception as exc:
-            raise LLMError(self._model_id, str(exc)) from exc
+            raise LLMError(self._model_id, _format_exception_detail(exc)) from exc
 
         text   = data["message"]["content"]
         tokens = data.get("eval_count", 0) + data.get("prompt_eval_count", 0)

@@ -561,8 +561,8 @@ const comparePage = (() => {
     const loading = document.getElementById('c-loading');
     loading.classList.add('visible');
     document.getElementById('c-loading-detail').textContent =
-      modelIds.map(id => utils.modelLabel(id)).join(', ');
-    _setStatus('loading', '분석 중...');
+      `순차 처리: ${modelIds.map(id => utils.modelLabel(id)).join(' → ')}`;
+    _setStatus('loading', '순차 비교 중...');
 
     try {
       const data = await api.compare({

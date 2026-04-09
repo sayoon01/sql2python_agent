@@ -4,7 +4,7 @@ backend/fewshot/builder.py
 프롬프트 조립기.
 
 역할:
-  - fewshot/examples.yaml 의 데이터를 읽어서
+  - fewshot/examples_20.yaml 의 데이터를 읽어서
   - MSSQL 고정 규칙과 옵션에 맞는 system prompt 를 조립합니다.
 
 규칙:
@@ -30,10 +30,10 @@ class FewShotExample:
 
 
 def _load_examples() -> list[FewShotExample]:
-    data_path = Path(__file__).with_name("examples.yaml")
+    data_path = Path(__file__).with_name("examples_20.yaml")
     raw = yaml.safe_load(data_path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
-        raise RuntimeError("examples.yaml 형식 오류: list 여야 합니다.")
+        raise RuntimeError("examples_20.yaml 형식 오류: list 여야 합니다.")
     return [FewShotExample(**item) for item in raw]
 
 
@@ -135,6 +135,8 @@ def build_system_prompt(
     ### [핵심 원칙]
     1. 변환된 Python 코드는 반드시 실행 가능해야 하며, 원본 SQL 저장 프로시저의 기능, 분기, 성공/실패 조건, 트랜잭션 흐름을 그대로 유지합니다.
     2. 원본 SQL에 없는 로직, 임의 메시지, 임의 조건, 추가 처리 방식은 넣지 않습니다.
+    2-1. 실패 메시지, 성공 메시지, 기본 에러 문자열을 임의로 만들어 넣지 않습니다. 원본에 메시지 할당이 있을 때만 같은 의미의 값으로 반영합니다.
+    2-2. rollback/commit/return/기본값 초기화도 원본에 있는 흐름만 반영합니다. 안전해 보인다는 이유로 임의 보정 로직을 추가하지 않습니다.
     3. 응답은 설명 없이 실행 가능한 Python 함수 코드만 출력합니다.
     4. 필요한 모든 import는 누락 없이 포함합니다.
     5. 존재가 불명확한 프로젝트 내부 모듈은 임의로 import하지 않습니다.
@@ -160,9 +162,11 @@ def build_system_prompt(
     17. `@@ROWCOUNT`는 `cursor.rowcount`로 변환합니다.
 
     ### [중요 로직 규칙]
-    18. 성공/실패 판단은 반드시 원본 SQL의 조건(`@@ROWCOUNT` 등)을 그대로 따릅니다.
-    19. 중간에 return하지 말고, 원본처럼 마지막에 commit/rollback을 결정합니다.
-    20. 예외 발생 시 반드시 `conn.rollback()` 후 실패 결과를 반환합니다.
+    18. 성공/실패 판단은 반드시 원본 SQL의 조건(`@@ROWCOUNT`, `@@ERROR`, OUTPUT 값, IF/ELSE 순서 등)을 그대로 따릅니다.
+    19. 중간에 return하지 말고, 원본처럼 마지막에 commit/rollback/return을 결정합니다.
+    20. 예외 처리에서는 원본 CATCH 블록의 동작만 반영합니다. 원본에 rollback이 없으면 Python에서도 임의 rollback을 넣지 않습니다.
+    21. 원본에서 실패 시 메시지를 남기지 않으면 Python에서도 빈 문자열/None 등으로 유지하고, 설명용 문장을 새로 만들지 않습니다.
+    22. 원본의 OUTPUT 파라미터가 명시적으로 세팅되지 않는 경로가 있으면, Python 반환값도 그 상태를 최대한 그대로 보존합니다.
 
 
 ## 출력 형식

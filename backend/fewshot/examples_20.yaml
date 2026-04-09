@@ -1,0 +1,297 @@
+- title: 01. SELECT 단건 조회
+  sql: "CREATE PROCEDURE GetUserByID\n    @UserID   INT,\n    @IsActive BIT = 1\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SELECT\
+    \ UserID, Name, Email, CreatedAt\n    FROM   Users\n    WHERE  UserID   = @UserID\n      AND  IsActive = @IsActive;\n\
+    END"
+  python_code: "from typing import Optional, Dict, Any\n\n\ndef get_user_by_id(\n    conn,\n    user_id: int,\n    is_active:\
+    \ bool = True,\n) -> Optional[Dict[str, Any]]:\n    \"\"\"사용자 단건 조회. 원본 SP: GetUserByID\"\"\"\n    sql = \"\"\"\n    \
+    \    SELECT UserID, Name, Email, CreatedAt\n        FROM   Users\n        WHERE  UserID   = ?\n          AND  IsActive\
+    \ = ?\n    \"\"\"\n    cursor = conn.cursor()\n    cursor.execute(sql, (user_id, int(is_active)))\n    row = cursor.fetchone()\n\
+    \    if row is None:\n        return None\n    cols = [col[0] for col in cursor.description]\n    return dict(zip(cols,\
+    \ row))\n"
+- title: 02. SELECT 다건 조회 (LIST 반환)
+  sql: "CREATE PROCEDURE GetOrdersByCustomer\n    @CustomerID INT,\n    @StatusCode NVARCHAR(20) = NULL\nAS\nBEGIN\n    SET\
+    \ NOCOUNT ON;\n    SELECT OrderID, TotalAmount, StatusCode, OrderDate\n    FROM   Orders\n    WHERE  CustomerID = @CustomerID\n\
+    \      AND  (@StatusCode IS NULL OR StatusCode = @StatusCode)\n    ORDER  BY OrderDate DESC;\nEND"
+  python_code: "from typing import List, Dict, Any, Optional\n\n\ndef get_orders_by_customer(\n    conn,\n    customer_id:\
+    \ int,\n    status_code: Optional[str] = None,\n) -> List[Dict[str, Any]]:\n    \"\"\"고객별 주문 목록 조회. 원본 SP: GetOrdersByCustomer\"\
+    \"\"\n    if status_code is None:\n        sql = \"\"\"\n            SELECT OrderID, TotalAmount, StatusCode, OrderDate\n\
+    \            FROM   Orders\n            WHERE  CustomerID = ?\n            ORDER  BY OrderDate DESC\n        \"\"\"\n\
+    \        params: tuple = (customer_id,)\n    else:\n        sql = \"\"\"\n            SELECT OrderID, TotalAmount, StatusCode,\
+    \ OrderDate\n            FROM   Orders\n            WHERE  CustomerID = ?\n              AND  StatusCode = ?\n       \
+    \     ORDER  BY OrderDate DESC\n        \"\"\"\n        params = (customer_id, status_code)\n\n    cursor = conn.cursor()\n\
+    \    cursor.execute(sql, params)\n    rows = cursor.fetchall()\n    if not rows:\n        return []\n    cols = [col[0]\
+    \ for col in cursor.description]\n    return [dict(zip(cols, row)) for row in rows]\n"
+- title: 03. INSERT + OUTPUT 파라미터
+  sql: "CREATE PROCEDURE CreateOrder\n    @CustomerID  INT,\n    @TotalAmount DECIMAL(18,2),\n    @OrderID     INT OUTPUT\n\
+    AS\nBEGIN\n    SET NOCOUNT ON;\n    BEGIN TRY\n        INSERT INTO Orders (CustomerID, TotalAmount, OrderDate)\n     \
+    \   VALUES (@CustomerID, @TotalAmount, GETDATE());\n        SET @OrderID = SCOPE_IDENTITY();\n    END TRY\n    BEGIN CATCH\n\
+    \        RAISERROR('주문 생성 실패', 16, 1);\n    END CATCH\nEND"
+  python_code: "from datetime import datetime\n\n\ndef create_order(\n    conn,\n    customer_id: int,\n    total_amount:\
+    \ float,\n) -> int:\n    \"\"\"주문 생성 후 새 OrderID 반환. 원본 SP: CreateOrder\"\"\"\n    sql = \"\"\"\n        INSERT INTO Orders\
+    \ (CustomerID, TotalAmount, OrderDate)\n        VALUES (?, ?, ?);\n        SELECT CAST(SCOPE_IDENTITY() AS INT) AS NewID;\n\
+    \    \"\"\"\n    cursor = conn.cursor()\n    try:\n        cursor.execute(sql, (customer_id, total_amount, datetime.now()))\n\
+    \        row = cursor.fetchone()\n        conn.commit()\n        return int(row[0]) if row else -1\n    except Exception\
+    \ as exc:\n        conn.rollback()\n        raise RuntimeError(f\"주문 생성 실패: {exc}\") from exc\n"
+- title: 04. UPDATE + @@ROWCOUNT 반환
+  sql: "CREATE PROCEDURE UpdateProductStock\n    @ProductID    INT,\n    @Delta        INT,\n    @RowsAffected INT OUTPUT\n\
+    AS\nBEGIN\n    SET NOCOUNT ON;\n    UPDATE Products\n    SET    StockQty  = StockQty + @Delta,\n           UpdatedAt =\
+    \ GETDATE()\n    WHERE  ProductID = @ProductID\n      AND  StockQty + @Delta >= 0;\n    SET @RowsAffected = @@ROWCOUNT;\n\
+    END"
+  python_code: "from datetime import datetime\n\n\ndef update_product_stock(conn, product_id: int, delta: int) -> int:\n \
+    \   \"\"\"재고 증감 후 변경된 행 수 반환. 원본 SP: UpdateProductStock\"\"\"\n    cursor = conn.cursor()\n    cursor.execute(\n     \
+    \   \"\"\"UPDATE Products SET StockQty=StockQty+?, UpdatedAt=?\n           WHERE ProductID=? AND StockQty+?>=0\"\"\",\n\
+    \        (delta, datetime.now(), product_id, delta),\n    )\n    rows_affected = cursor.rowcount\n    conn.commit()\n\
+    \    return rows_affected\n"
+- title: 05. NULL 기본값 파라미터 + 다중 OUTPUT
+  sql: "CREATE PROCEDURE RegisterMember\n    @Name       NVARCHAR(100),\n    @Email      NVARCHAR(200),\n    @Phone      NVARCHAR(20)\
+    \  = NULL,\n    @Grade      NVARCHAR(10)  = 'BASIC',\n    @MemberID   INT           OUTPUT,\n    @MemberCode NVARCHAR(20)\
+    \  OUTPUT\nAS\nBEGIN\n    SET NOCOUNT ON;\n    INSERT INTO Members (Name, Email, Phone, Grade, CreatedAt)\n    VALUES\
+    \ (@Name, @Email, @Phone, @Grade, GETDATE());\n    SET @MemberID   = SCOPE_IDENTITY();\n    SET @MemberCode = 'M' + RIGHT('000000'+CAST(@MemberID\
+    \ AS NVARCHAR),6);\nEND"
+  python_code: "from datetime import datetime\nfrom typing import Optional, Tuple\n\n\ndef register_member(\n    conn,\n \
+    \   name: str,\n    email: str,\n    phone: Optional[str] = None,\n    grade: str = \"BASIC\",\n) -> Tuple[int, str]:\n\
+    \    \"\"\"회원 등록 후 (member_id, member_code) 반환. 원본 SP: RegisterMember\"\"\"\n    sql = \"\"\"\n        INSERT INTO Members\
+    \ (Name, Email, Phone, Grade, CreatedAt)\n        VALUES (?, ?, ?, ?, ?);\n        SELECT CAST(SCOPE_IDENTITY() AS INT);\n\
+    \    \"\"\"\n    cursor = conn.cursor()\n    cursor.execute(sql, (name, email, phone, grade, datetime.now()))\n    row\
+    \ = cursor.fetchone()\n    conn.commit()\n    member_id   = int(row[0]) if row else -1\n    member_code = f\"M{member_id:06d}\"\
+    \n    return member_id, member_code\n"
+- title: 06. 트랜잭션 (원자적 다중 DML)
+  sql: "CREATE PROCEDURE TransferFunds\n    @FromAccountID INT,\n    @ToAccountID   INT,\n    @Amount        DECIMAL(18,2)\n\
+    AS\nBEGIN\n    BEGIN TRANSACTION;\n    BEGIN TRY\n        UPDATE Accounts SET Balance=Balance-@Amount WHERE AccountID=@FromAccountID;\n\
+    \        UPDATE Accounts SET Balance=Balance+@Amount WHERE AccountID=@ToAccountID;\n        COMMIT TRANSACTION;\n    END\
+    \ TRY\n    BEGIN CATCH\n        ROLLBACK TRANSACTION;\n        THROW;\n    END CATCH\nEND"
+  python_code: "def transfer_funds(conn, from_account_id: int, to_account_id: int, amount: float) -> None:\n    \"\"\"계좌 간\
+    \ 이체. 원본 SP: TransferFunds\"\"\"\n    cursor = conn.cursor()\n    try:\n        cursor.execute(\n            \"UPDATE\
+    \ Accounts SET Balance=Balance-? WHERE AccountID=?\",\n            (amount, from_account_id),\n        )\n        cursor.execute(\n\
+    \            \"UPDATE Accounts SET Balance=Balance+? WHERE AccountID=?\",\n            (amount, to_account_id),\n    \
+    \    )\n        conn.commit()\n    except Exception as exc:\n        conn.rollback()\n        raise RuntimeError(f\"이체\
+    \ 실패: {exc}\") from exc\n"
+- title: 08. CASE WHEN + GROUP BY 집계
+  sql: "CREATE PROCEDURE GetSalesSummary\n    @StartDate DATE,\n    @EndDate   DATE\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SELECT\
+    \ CategoryID,\n           COUNT(*) AS TotalOrders,\n           SUM(TotalAmount) AS TotalRevenue,\n           SUM(CASE\
+    \ WHEN StatusCode='CANCEL' THEN 1 ELSE 0 END) AS CancelCount\n    FROM   Orders\n    WHERE  OrderDate BETWEEN @StartDate\
+    \ AND @EndDate\n    GROUP  BY CategoryID\n    ORDER  BY TotalRevenue DESC;\nEND"
+  python_code: "from datetime import date\nfrom typing import List, Dict, Any\n\n\ndef get_sales_summary(conn, start_date:\
+    \ date, end_date: date) -> List[Dict[str, Any]]:\n    \"\"\"기간별 카테고리 매출 집계. 원본 SP: GetSalesSummary\"\"\"\n    sql = \"\
+    \"\"\n        SELECT CategoryID, COUNT(*) AS TotalOrders,\n               SUM(TotalAmount) AS TotalRevenue,\n        \
+    \       SUM(CASE WHEN StatusCode='CANCEL' THEN 1 ELSE 0 END) AS CancelCount\n        FROM   Orders\n        WHERE  OrderDate\
+    \ BETWEEN ? AND ?\n        GROUP  BY CategoryID\n        ORDER  BY TotalRevenue DESC\n    \"\"\"\n    cursor = conn.cursor()\n\
+    \    cursor.execute(sql, (start_date, end_date))\n    rows = cursor.fetchall()\n    cols = [col[0] for col in cursor.description]\n\
+    \    return [dict(zip(cols, row)) for row in rows]\n"
+- title: 10. EXISTS 조건 체크 + 조건부 실행
+  sql: "CREATE PROCEDURE ActivatePromotion\n    @PromoCode  NVARCHAR(50),\n    @UserID     INT,\n    @ResultCode INT OUTPUT\n\
+    AS\nBEGIN\n    SET NOCOUNT ON;\n    IF NOT EXISTS(SELECT 1 FROM Promotions WHERE Code=@PromoCode)\n    BEGIN SET @ResultCode=1;\
+    \ RETURN; END\n    IF EXISTS(SELECT 1 FROM UserPromotions WHERE UserID=@UserID AND PromoCode=@PromoCode)\n    BEGIN SET\
+    \ @ResultCode=2; RETURN; END\n    IF EXISTS(SELECT 1 FROM Promotions WHERE Code=@PromoCode AND ExpiresAt<GETDATE())\n\
+    \    BEGIN SET @ResultCode=3; RETURN; END\n    INSERT INTO UserPromotions(UserID,PromoCode,UsedAt) VALUES(@UserID,@PromoCode,GETDATE());\n\
+    \    SET @ResultCode=0;\nEND"
+  python_code: "from datetime import datetime\n\n\ndef activate_promotion(conn, promo_code: str, user_id: int) -> int:\n \
+    \   \"\"\"프로모션 활성화. 0=성공 1=없음 2=이미사용 3=만료. 원본 SP: ActivatePromotion\"\"\"\n    cursor = conn.cursor()\n    cursor.execute(\"\
+    SELECT 1 FROM Promotions WHERE Code=?\", (promo_code,))\n    if cursor.fetchone() is None:\n        return 1\n    cursor.execute(\n\
+    \        \"SELECT 1 FROM UserPromotions WHERE UserID=? AND PromoCode=?\", (user_id, promo_code)\n    )\n    if cursor.fetchone()\
+    \ is not None:\n        return 2\n    cursor.execute(\n        \"SELECT 1 FROM Promotions WHERE Code=? AND ExpiresAt<?\"\
+    , (promo_code, datetime.now())\n    )\n    if cursor.fetchone() is not None:\n        return 3\n    cursor.execute(\n\
+    \        \"INSERT INTO UserPromotions(UserID,PromoCode,UsedAt) VALUES(?,?,?)\",\n        (user_id, promo_code, datetime.now()),\n\
+    \    )\n    conn.commit()\n    return 0\n"
+- title: 11. 페이징 (OFFSET-FETCH)
+  sql: "CREATE PROCEDURE SearchProducts\n    @Keyword    NVARCHAR(100) = NULL,\n    @CategoryID INT = NULL,\n    @PageNo \
+    \    INT = 1,\n    @PageSize   INT = 20,\n    @TotalCount INT OUTPUT\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SELECT @TotalCount=COUNT(*)\
+    \ FROM Products\n    WHERE IsActive=1\n      AND (@Keyword IS NULL OR Name LIKE '%'+@Keyword+'%')\n      AND (@CategoryID\
+    \ IS NULL OR CategoryID=@CategoryID);\n\n    SELECT ProductID, Name, Price, StockQty\n    FROM   Products\n    WHERE \
+    \ IsActive=1\n      AND  (@Keyword IS NULL OR Name LIKE '%'+@Keyword+'%')\n      AND  (@CategoryID IS NULL OR CategoryID=@CategoryID)\n\
+    \    ORDER  BY ProductID\n    OFFSET (@PageNo-1)*@PageSize ROWS FETCH NEXT @PageSize ROWS ONLY;\nEND"
+  python_code: "from typing import Optional, List, Dict, Any, Tuple\n\n\ndef search_products(\n    conn,\n    keyword: Optional[str]\
+    \ = None,\n    category_id: Optional[int] = None,\n    page_no: int = 1,\n    page_size: int = 20,\n) -> Tuple[int, List[Dict[str,\
+    \ Any]]]:\n    \"\"\"상품 검색 + 페이징. (total_count, items) 반환. 원본 SP: SearchProducts\"\"\"\n    where, params = [\"IsActive=1\"\
+    ], []\n    if keyword is not None:\n        where.append(\"Name LIKE ?\")\n        params.append(f\"%{keyword}%\")\n \
+    \   if category_id is not None:\n        where.append(\"CategoryID=?\")\n        params.append(category_id)\n    where_sql\
+    \ = \" AND \".join(where)\n    cursor = conn.cursor()\n    cursor.execute(f\"SELECT COUNT(*) FROM Products WHERE {where_sql}\"\
+    , params)\n    total_count = cursor.fetchone()[0]\n    offset = (page_no - 1) * page_size\n    cursor.execute(\n     \
+    \   f\"SELECT ProductID,Name,Price,StockQty FROM Products WHERE {where_sql}\"\n        f\" ORDER BY ProductID OFFSET ?\
+    \ ROWS FETCH NEXT ? ROWS ONLY\",\n        params + [offset, page_size],\n    )\n    rows = cursor.fetchall()\n    cols\
+    \ = [col[0] for col in cursor.description]\n    return total_count, [dict(zip(cols, row)) for row in rows]\n"
+- title: 12. 다중 결과셋 반환
+  sql: "CREATE PROCEDURE GetDashboardData @UserID INT\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SELECT COUNT(*) AS TotalOrders,\
+    \ SUM(TotalAmount) AS TotalSpent\n    FROM Orders WHERE CustomerID=@UserID;\n\n    SELECT TOP 5 OrderID, TotalAmount,\
+    \ StatusCode, OrderDate\n    FROM Orders WHERE CustomerID=@UserID ORDER BY OrderDate DESC;\nEND"
+  python_code: "from typing import Dict, Any\n\n\ndef get_dashboard_data(conn, user_id: int) -> Dict[str, Any]:\n    \"\"\"\
+    대시보드 데이터 (다중 결과셋). 원본 SP: GetDashboardData\"\"\"\n    sql = \"\"\"\n        SELECT COUNT(*) AS TotalOrders, SUM(TotalAmount)\
+    \ AS TotalSpent\n        FROM Orders WHERE CustomerID=?;\n\n        SELECT TOP 5 OrderID, TotalAmount, StatusCode, OrderDate\n\
+    \        FROM Orders WHERE CustomerID=? ORDER BY OrderDate DESC;\n    \"\"\"\n    cursor = conn.cursor()\n    cursor.execute(sql,\
+    \ (user_id, user_id))\n    row  = cursor.fetchone()\n    cols = [col[0] for col in cursor.description]\n    summary =\
+    \ dict(zip(cols, row)) if row else {}\n    cursor.nextset()\n    rows  = cursor.fetchall()\n    cols  = [col[0] for col\
+    \ in cursor.description]\n    recent = [dict(zip(cols, r)) for r in rows]\n    return {\"summary\": summary, \"recent_orders\"\
+    : recent}\n"
+- title: 15. 동적 SQL (sp_executesql) + 보안 검증
+  sql: "CREATE PROCEDURE DynamicSearch\n    @TableName  NVARCHAR(128),\n    @Conditions NVARCHAR(500)=NULL,\n    @OrderBy\
+    \    NVARCHAR(100)='ID ASC'\nAS\nBEGIN\n    SET NOCOUNT ON;\n    DECLARE @SQL NVARCHAR(MAX)=N'SELECT * FROM '+QUOTENAME(@TableName);\n\
+    \    IF @Conditions IS NOT NULL SET @SQL=@SQL+N' WHERE '+@Conditions;\n    SET @SQL=@SQL+N' ORDER BY '+@OrderBy;\n   \
+    \ EXEC sp_executesql @SQL;\nEND"
+  python_code: "import re\nfrom typing import List, Dict, Any, Optional\n\n_ALLOWED_TABLES   = frozenset({\"Users\",\"Orders\"\
+    ,\"Products\",\"Employees\"})\n_ORDER_RE         = re.compile(r\"^[A-Za-z_][A-Za-z0-9_]* (ASC|DESC)$\")\n\n\ndef dynamic_search(\n\
+    \    conn,\n    table_name: str,\n    conditions: Optional[str] = None,\n    order_by: str = \"ID ASC\",\n) -> List[Dict[str,\
+    \ Any]]:\n    \"\"\"동적 테이블 검색. sp_executesql → 화이트리스트 검증. 원본 SP: DynamicSearch\"\"\"\n    if table_name not in _ALLOWED_TABLES:\n\
+    \        raise ValueError(f\"허용되지 않는 테이블: {table_name}\")\n    if not _ORDER_RE.match(order_by):\n        raise ValueError(f\"\
+    잘못된 ORDER BY: {order_by}\")\n    sql = f\"SELECT * FROM [{table_name}]\"\n    if conditions:\n        sql += f\" WHERE\
+    \ {conditions}\"\n    sql += f\" ORDER BY {order_by}\"\n    cursor = conn.cursor()\n    cursor.execute(sql)\n    rows\
+    \ = cursor.fetchall()\n    cols = [col[0] for col in cursor.description]\n    return [dict(zip(cols, row)) for row in\
+    \ rows]\n"
+- title: 17. 중첩 트랜잭션 + SAVEPOINT
+  sql: "CREATE PROCEDURE ProcessOrderWithSavepoint @OrderID INT, @PaymentID INT\nAS\nBEGIN\n    BEGIN TRANSACTION OuterTx;\n\
+    \    BEGIN TRY\n        UPDATE Orders SET StatusCode='PROCESSING' WHERE OrderID=@OrderID;\n        SAVE TRANSACTION PaymentSave;\n\
+    \        BEGIN TRY\n            UPDATE Payments SET Status='CONFIRMED' WHERE PaymentID=@PaymentID;\n            UPDATE\
+    \ Orders   SET StatusCode='PAID'  WHERE OrderID=@OrderID;\n        END TRY\n        BEGIN CATCH\n            ROLLBACK\
+    \ TRANSACTION PaymentSave;\n            UPDATE Orders SET StatusCode='PAYMENT_FAILED' WHERE OrderID=@OrderID;\n      \
+    \  END CATCH\n        COMMIT TRANSACTION OuterTx;\n    END TRY\n    BEGIN CATCH ROLLBACK TRANSACTION OuterTx; THROW; END\
+    \ CATCH\nEND"
+  python_code: "def process_order_with_savepoint(conn, order_id: int, payment_id: int) -> None:\n    \"\"\"주문 처리 (SAVEPOINT\
+    \ 부분 롤백). 원본 SP: ProcessOrderWithSavepoint\"\"\"\n    cursor = conn.cursor()\n    try:\n        cursor.execute(\"UPDATE\
+    \ Orders SET StatusCode='PROCESSING' WHERE OrderID=?\", (order_id,))\n        cursor.execute(\"SAVE TRANSACTION PaymentSave\"\
+    )\n        try:\n            cursor.execute(\n                \"UPDATE Payments SET Status='CONFIRMED' WHERE PaymentID=?\"\
+    , (payment_id,)\n            )\n            cursor.execute(\"UPDATE Orders SET StatusCode='PAID' WHERE OrderID=?\", (order_id,))\n\
+    \        except Exception:\n            cursor.execute(\"ROLLBACK TRANSACTION PaymentSave\")\n            cursor.execute(\n\
+    \                \"UPDATE Orders SET StatusCode='PAYMENT_FAILED' WHERE OrderID=?\", (order_id,)\n            )\n     \
+    \   conn.commit()\n    except Exception as exc:\n        conn.rollback()\n        raise RuntimeError(f\"주문 처리 실패: {exc}\"\
+    ) from exc\n"
+- title: 21. LEFT JOIN + INNER JOIN 복합 조회
+  sql: "CREATE PROCEDURE GetOrderDetail\n    @OrderID INT\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SELECT\n        o.OrderID,\n\
+    \        o.OrderDate,\n        c.Name        AS CustomerName,\n        c.Email,\n        oi.ProductID,\n        p.Name\
+    \        AS ProductName,\n        oi.Qty,\n        oi.UnitPrice,\n        oi.Qty * oi.UnitPrice AS LineTotal,\n      \
+    \  a.AddressLine AS ShipAddress\n    FROM Orders o\n    INNER JOIN Customers    c  ON o.CustomerID   = c.CustomerID\n\
+    \    INNER JOIN OrderItems   oi ON o.OrderID       = oi.OrderID\n    INNER JOIN Products     p  ON oi.ProductID    = p.ProductID\n\
+    \    LEFT  JOIN ShipAddresses a ON o.ShipAddressID = a.AddressID\n    WHERE o.OrderID = @OrderID;\nEND\n"
+  python_code: "from typing import List, Dict, Any\n\ndef get_order_detail(\n    conn: conn,\n    order_id: int,\n) -> List[Dict[str,\
+    \ Any]]:\n    \"\"\"\n    주문 상세 조회 (복합 JOIN).\n    원본 SP: GetOrderDetail\n    변환 규칙:\n      INNER JOIN / LEFT JOIN → SQL\
+    \ 그대로 유지\n      계산 컬럼(Qty*UnitPrice) → SQL에서 계산 유지\n    \"\"\"\n    sql = \"\"\"\n        SELECT\n            o.OrderID,\
+    \ o.OrderDate,\n            c.Name AS CustomerName, c.Email,\n            oi.ProductID, p.Name AS ProductName,\n     \
+    \       oi.Qty, oi.UnitPrice,\n            oi.Qty * oi.UnitPrice AS LineTotal,\n            a.AddressLine AS ShipAddress\n\
+    \        FROM Orders o\n        INNER JOIN Customers    c  ON o.CustomerID   = c.CustomerID\n        INNER JOIN OrderItems\
+    \   oi ON o.OrderID       = oi.OrderID\n        INNER JOIN Products     p  ON oi.ProductID    = p.ProductID\n        LEFT\
+    \  JOIN ShipAddresses a ON o.ShipAddressID = a.AddressID\n        WHERE o.OrderID = ?\n    \"\"\"\n    cursor = conn.cursor()\n\
+    \    cursor.execute(sql, (order_id,))\n    rows = cursor.fetchall()\n    cols = [col[0] for col in cursor.description]\n\
+    \    return [dict(zip(cols, row)) for row in rows]\n"
+- title: 23. ROW_NUMBER 윈도우 함수
+  sql: "CREATE PROCEDURE GetRankedSalespeople\n    @TopN INT = 10\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SELECT *\n    FROM\
+    \ (\n        SELECT\n            EmployeeID,\n            Name,\n            Department,\n            TotalSales,\n  \
+    \          ROW_NUMBER() OVER (\n                PARTITION BY Department ORDER BY TotalSales DESC\n            ) AS DeptRank\n\
+    \        FROM vw_SalesSummary\n    ) ranked\n    WHERE DeptRank <= @TopN;\nEND\n"
+  python_code: "from typing import List, Dict, Any\n\ndef get_ranked_salespeople(\n    conn: conn,\n    top_n: int = 10,\n\
+    ) -> List[Dict[str, Any]]:\n    \"\"\"\n    부서별 영업 순위 조회.\n    원본 SP: GetRankedSalespeople\n    변환 규칙:\n      ROW_NUMBER()\
+    \ OVER (PARTITION BY ... ORDER BY ...) → SQL 그대로 유지\n      서브쿼리 WHERE → SQL 그대로 유지\n    \"\"\"\n    sql = \"\"\"\n   \
+    \     SELECT *\n        FROM (\n            SELECT\n                EmployeeID, Name, Department, TotalSales,\n      \
+    \          ROW_NUMBER() OVER (\n                    PARTITION BY Department ORDER BY TotalSales DESC\n               \
+    \ ) AS DeptRank\n            FROM vw_SalesSummary\n        ) ranked\n        WHERE DeptRank <= ?\n    \"\"\"\n    cursor\
+    \ = conn.cursor()\n    cursor.execute(sql, (top_n,))\n    rows = cursor.fetchall()\n    cols = [col[0] for col in cursor.description]\n\
+    \    return [dict(zip(cols, row)) for row in rows]\n"
+- title: 26. 재귀 CTE (계층 트리 전체 탐색)
+  sql: "CREATE PROCEDURE GetCategoryTree\n    @RootCategoryID INT\nAS\nBEGIN\n    SET NOCOUNT ON;\n    WITH CategoryCTE AS\
+    \ (\n        SELECT CategoryID, ParentID, Name, 0 AS Depth\n        FROM   Categories\n        WHERE  CategoryID = @RootCategoryID\n\
+    \n        UNION ALL\n\n        SELECT c.CategoryID, c.ParentID, c.Name, cte.Depth + 1\n        FROM   Categories c\n \
+    \       INNER JOIN CategoryCTE cte ON c.ParentID = cte.CategoryID\n    )\n    SELECT CategoryID, ParentID, Name, Depth\n\
+    \    FROM   CategoryCTE\n    ORDER  BY Depth, CategoryID;\nEND\n"
+  python_code: "from typing import List, Dict, Any\n\ndef get_category_tree(\n    conn: conn,\n    root_category_id: int,\n\
+    ) -> List[Dict[str, Any]]:\n    \"\"\"\n    카테고리 계층 트리 전체 조회 (재귀 CTE).\n    원본 SP: GetCategoryTree\n    변환 규칙:\n     \
+    \ 재귀 WITH ... UNION ALL → SQL 그대로 유지\n      (SQL Server / pyodbc 재귀 CTE 지원)\n    \"\"\"\n    sql = \"\"\"\n        WITH\
+    \ CategoryCTE AS (\n            SELECT CategoryID, ParentID, Name, 0 AS Depth\n            FROM   Categories\n       \
+    \     WHERE  CategoryID = ?\n            UNION ALL\n            SELECT c.CategoryID, c.ParentID, c.Name, cte.Depth + 1\n\
+    \            FROM   Categories c\n            INNER JOIN CategoryCTE cte ON c.ParentID = cte.CategoryID\n        )\n \
+    \       SELECT CategoryID, ParentID, Name, Depth\n        FROM   CategoryCTE\n        ORDER  BY Depth, CategoryID\n  \
+    \  \"\"\"\n    cursor = conn.cursor()\n    cursor.execute(sql, (root_category_id,))\n    rows = cursor.fetchall()\n  \
+    \  cols = [col[0] for col in cursor.description]\n    return [dict(zip(cols, row)) for row in rows]\n"
+- title: 31. 타입 캐스팅 (CAST / CONVERT / TRY_CAST)
+  sql: "CREATE PROCEDURE ImportRawData\n    @RawAmount   NVARCHAR(50),\n    @RawDate     NVARCHAR(20),\n    @RawIsActive NVARCHAR(5)\n\
+    AS\nBEGIN\n    SET NOCOUNT ON;\n    DECLARE @Amount   DECIMAL(18,2);\n    DECLARE @Date     DATE;\n    DECLARE @IsActive\
+    \ BIT;\n\n    SET @Amount   = TRY_CAST(@RawAmount AS DECIMAL(18,2));\n    SET @Date     = TRY_CAST(@RawDate   AS DATE);\n\
+    \    SET @IsActive = CASE WHEN LOWER(@RawIsActive) IN ('true','1','yes') THEN 1 ELSE 0 END;\n\n    IF @Amount IS NULL\
+    \ OR @Date IS NULL\n    BEGIN\n        RAISERROR('변환 실패: 유효하지 않은 입력값', 16, 1);\n        RETURN;\n    END\n\n    INSERT\
+    \ INTO ImportedData (Amount, ImportDate, IsActive)\n    VALUES (@Amount, @Date, @IsActive);\nEND\n"
+  python_code: "from datetime import date\nfrom decimal import Decimal, InvalidOperation\nfrom typing import Optional\n\n\
+    def import_raw_data(\n    conn: conn,\n    raw_amount: str,\n    raw_date: str,\n    raw_is_active: str,\n) -> None:\n\
+    \    \"\"\"\n    원시 문자열 데이터를 타입 변환 후 저장.\n    원본 SP: ImportRawData\n    변환 규칙:\n      TRY_CAST → Python try/except 로 안전\
+    \ 변환\n      CASE WHEN LOWER(...) IN ('true','1','yes') → Python 표현식\n      RAISERROR + RETURN → ValueError raise 후 return\n\
+    \    \"\"\"\n    # TRY_CAST(amount AS DECIMAL)\n    try:\n        amount = float(Decimal(raw_amount.strip()))\n    except\
+    \ (InvalidOperation, ValueError):\n        raise ValueError(f\"변환 실패: 유효하지 않은 amount '{raw_amount}'\")\n\n    # TRY_CAST(date\
+    \ AS DATE)\n    try:\n        parsed_date = date.fromisoformat(raw_date.strip())\n    except ValueError:\n        raise\
+    \ ValueError(f\"변환 실패: 유효하지 않은 date '{raw_date}'\")\n\n    # CASE WHEN LOWER(...) IN (...)\n    is_active: bool = raw_is_active.strip().lower()\
+    \ in {\"true\", \"1\", \"yes\"}\n\n    cursor = conn.cursor()\n    cursor.execute(\n        \"INSERT INTO ImportedData\
+    \ (Amount, ImportDate, IsActive) VALUES (?, ?, ?)\",\n        (amount, parsed_date, int(is_active)),\n    )\n    conn.commit()\n"
+- title: 34. CROSS APPLY / OUTER APPLY
+  sql: "CREATE PROCEDURE GetLatestOrderPerCustomer\n    @MinOrders INT = 1\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SELECT\n \
+    \       c.CustomerID,\n        c.Name,\n        oa.OrderID,\n        oa.OrderDate,\n        oa.TotalAmount\n    FROM Customers\
+    \ c\n    OUTER APPLY (\n        SELECT TOP 1 OrderID, OrderDate, TotalAmount\n        FROM   Orders o\n        WHERE \
+    \ o.CustomerID = c.CustomerID\n        ORDER  BY o.OrderDate DESC\n    ) oa\n    WHERE (\n        SELECT COUNT(*) FROM\
+    \ Orders o2\n        WHERE o2.CustomerID = c.CustomerID\n    ) >= @MinOrders\n    ORDER BY c.CustomerID;\nEND\n"
+  python_code: "from typing import List, Dict, Any\n\ndef get_latest_order_per_customer(\n    conn: conn,\n    min_orders:\
+    \ int = 1,\n) -> List[Dict[str, Any]]:\n    \"\"\"\n    고객별 최신 주문 조회 (OUTER APPLY).\n    원본 SP: GetLatestOrderPerCustomer\n\
+    \    변환 규칙:\n      OUTER APPLY (SELECT TOP 1 ... ORDER BY ...) → SQL 그대로 유지\n      (APPLY는 SQL Server 전용이므로 쿼리 내 유지 권장)\n\
+    \    \"\"\"\n    sql = \"\"\"\n        SELECT\n            c.CustomerID, c.Name,\n            oa.OrderID, oa.OrderDate,\
+    \ oa.TotalAmount\n        FROM Customers c\n        OUTER APPLY (\n            SELECT TOP 1 OrderID, OrderDate, TotalAmount\n\
+    \            FROM   Orders o\n            WHERE  o.CustomerID = c.CustomerID\n            ORDER  BY o.OrderDate DESC\n\
+    \        ) oa\n        WHERE (\n            SELECT COUNT(*) FROM Orders o2\n            WHERE o2.CustomerID = c.CustomerID\n\
+    \        ) >= ?\n        ORDER BY c.CustomerID\n    \"\"\"\n    cursor = conn.cursor()\n    cursor.execute(sql, (min_orders,))\n\
+    \    rows = cursor.fetchall()\n    cols = [col[0] for col in cursor.description]\n    return [dict(zip(cols, row)) for\
+    \ row in rows]\n"
+- title: 42. 낙관적 잠금 (Optimistic Locking / RowVersion)
+  sql: "CREATE PROCEDURE UpdateWithVersionCheck\n    @ProductID      INT,\n    @NewPrice       DECIMAL(10,2),\n    @ExpectedVersion\
+    \ ROWVERSION,\n    @Updated        BIT OUTPUT\nAS\nBEGIN\n    SET NOCOUNT ON;\n    UPDATE Products\n    SET    Price \
+    \    = @NewPrice,\n           UpdatedAt = GETDATE()\n    WHERE  ProductID = @ProductID\n      AND  RowVer    = @ExpectedVersion;\n\
+    \n    SET @Updated = CASE WHEN @@ROWCOUNT > 0 THEN 1 ELSE 0 END;\nEND\n"
+  python_code: "from datetime import datetime\n\ndef update_with_version_check(\n    conn: conn,\n    product_id: int,\n \
+    \   new_price: float,\n    expected_version: bytes,\n) -> bool:\n    \"\"\"\n    낙관적 잠금으로 가격 업데이트.\n    원본 SP: UpdateWithVersionCheck\n\
+    \    변환 규칙:\n      ROWVERSION → bytes 타입 파라미터\n      @@ROWCOUNT > 0 → cursor.rowcount > 0\n      OUTPUT BIT → return bool\n\
+    \    \"\"\"\n    cursor = conn.cursor()\n    cursor.execute(\n        \"UPDATE Products SET Price=?, UpdatedAt=?\"\n \
+    \       \" WHERE ProductID=? AND RowVer=?\",\n        (new_price, datetime.now(), product_id, expected_version),\n   \
+    \ )\n    updated = cursor.rowcount > 0\n    conn.commit()\n    return updated\n"
+- title: 65. 권한 검사 (Permission Check)
+  sql: "CREATE PROCEDURE CheckUserPermission\n    @UserID     INT,\n    @Resource   NVARCHAR(100),\n    @Action     NVARCHAR(50),\n\
+    \    @HasPerm    BIT OUTPUT\nAS\nBEGIN\n    SET NOCOUNT ON;\n    SET @HasPerm = 0;\n\n    -- 직접 권한 확인\n    IF EXISTS (\n\
+    \        SELECT 1 FROM UserPermissions\n        WHERE UserID=@UserID AND Resource=@Resource AND Action=@Action AND IsActive=1\n\
+    \    )\n    BEGIN\n        SET @HasPerm = 1;\n        RETURN;\n    END\n\n    -- 역할 기반 권한 확인\n    IF EXISTS (\n      \
+    \  SELECT 1\n        FROM   UserRoles ur\n        JOIN   RolePermissions rp ON ur.RoleID = rp.RoleID\n        WHERE  ur.UserID\
+    \   = @UserID\n          AND  rp.Resource = @Resource\n          AND  rp.Action   = @Action\n          AND  rp.IsActive\
+    \ = 1\n    )\n        SET @HasPerm = 1;\nEND\n"
+  python_code: "def check_user_permission(\n    conn: conn,\n    user_id: int,\n    resource: str,\n    action: str,\n) ->\
+    \ bool:\n    \"\"\"\n    사용자 권한 확인 (직접 권한 → 역할 기반 권한 순서로 체크).\n    원본 SP: CheckUserPermission\n    변환 규칙:\n      IF EXISTS\
+    \ + RETURN → Python if + early return\n      다단계 권한 체크 → 순차 if 문\n      OUTPUT BIT → return bool\n    \"\"\"\n    cursor\
+    \ = conn.cursor()\n\n    # 직접 권한\n    cursor.execute(\n        \"SELECT 1 FROM UserPermissions\"\n        \" WHERE UserID=?\
+    \ AND Resource=? AND Action=? AND IsActive=1\",\n        (user_id, resource, action),\n    )\n    if cursor.fetchone()\
+    \ is not None:\n        return True\n\n    # 역할 기반 권한\n    cursor.execute(\n        \"\"\"\n        SELECT 1 FROM UserRoles\
+    \ ur\n        JOIN RolePermissions rp ON ur.RoleID=rp.RoleID\n        WHERE ur.UserID=? AND rp.Resource=? AND rp.Action=?\
+    \ AND rp.IsActive=1\n        \"\"\",\n        (user_id, resource, action),\n    )\n    return cursor.fetchone() is not\
+    \ None\n"
+- title: 100. 최종 복합 — 전체 주문 마감 처리
+  sql: "CREATE PROCEDURE FinalizeOrderBatch\n    @BatchDate     DATE,\n    @OperatorID    INT,\n    @ClosedCount   INT   \
+    \       OUTPUT,\n    @TotalRevenue  DECIMAL(18,2) OUTPUT,\n    @FailedCount   INT          OUTPUT\nAS\nBEGIN\n    SET\
+    \ NOCOUNT ON;\n    SET @ClosedCount  = 0;\n    SET @TotalRevenue = 0;\n    SET @FailedCount  = 0;\n\n    -- CTE: 마감 대상\
+    \ 주문\n    WITH Eligible AS (\n        SELECT OrderID, TotalAmount\n        FROM   Orders\n        WHERE  CAST(OrderDate\
+    \ AS DATE) = @BatchDate\n          AND  StatusCode IN ('PAID','PROCESSING')\n    )\n    -- 재고 차감 (아이템별)\n    UPDATE p\n\
+    \    SET    p.StockQty = p.StockQty - oi.Qty\n    FROM   Products p\n    INNER  JOIN OrderItems oi ON p.ProductID=oi.ProductID\n\
+    \    INNER  JOIN Eligible   e  ON oi.OrderID=e.OrderID\n    WHERE  p.StockQty >= oi.Qty;\n\n    -- 주문 마감\n    BEGIN TRY\n\
+    \        UPDATE Orders\n        SET    StatusCode='DONE', ClosedAt=GETDATE(), ClosedBy=@OperatorID\n        WHERE  OrderID\
+    \ IN (SELECT OrderID FROM Eligible);\n\n        SET @ClosedCount = @@ROWCOUNT;\n\n        SELECT @TotalRevenue = SUM(TotalAmount)\
+    \ FROM Eligible;\n\n        -- 정산 이력 기록\n        INSERT INTO ClosingHistory\n            (BatchDate, OperatorID, ClosedCount,\
+    \ TotalRevenue, ClosedAt)\n        VALUES\n            (@BatchDate, @OperatorID, @ClosedCount, @TotalRevenue, GETDATE());\n\
+    \n    END TRY\n    BEGIN CATCH\n        SET @FailedCount = (SELECT COUNT(*) FROM Eligible);\n    END CATCH\nEND\n"
+  python_code: "from datetime import date, datetime\nfrom typing import Tuple\n\ndef finalize_order_batch(\n    conn: conn,\n\
+    \    batch_date: date,\n    operator_id: int,\n) -> Tuple[int, float, int]:\n    \"\"\"\n    전체 주문 배치 마감 처리.\n    반환:\
+    \ (closed_count, total_revenue, failed_count)\n    원본 SP: FinalizeOrderBatch\n    변환 규칙:\n      CTE + UPDATE JOIN    →\
+    \ SQL 그대로 유지\n      BEGIN TRY/CATCH      → try/except + rollback\n      다중 OUTPUT 파라미터 → Tuple[int, float, int]\n    \
+    \  @@ROWCOUNT + SELECT  → cursor.rowcount + fetchone\n      CAST(date AS DATE) = @BatchDate → SQL 그대로 유지\n    \"\"\"\n\
+    \    now    = datetime.now()\n    cursor = conn.cursor()\n\n    try:\n        # 1. 재고 차감\n        cursor.execute(\n  \
+    \          \"\"\"\n            UPDATE p\n            SET    p.StockQty = p.StockQty - oi.Qty\n            FROM   Products\
+    \ p\n            INNER  JOIN OrderItems oi ON p.ProductID=oi.ProductID\n            INNER  JOIN Orders     e  ON oi.OrderID=e.OrderID\n\
+    \            WHERE  CAST(e.OrderDate AS DATE)=?\n              AND  e.StatusCode IN ('PAID','PROCESSING')\n          \
+    \    AND  p.StockQty >= oi.Qty\n            \"\"\",\n            (batch_date,),\n        )\n\n        # 2. 주문 마감\n   \
+    \     cursor.execute(\n            \"\"\"\n            UPDATE Orders\n            SET    StatusCode='DONE', ClosedAt=?,\
+    \ ClosedBy=?\n            WHERE  CAST(OrderDate AS DATE)=?\n              AND  StatusCode IN ('PAID','PROCESSING')\n \
+    \           \"\"\",\n            (now, operator_id, batch_date),\n        )\n        closed_count = cursor.rowcount\n\n\
+    \        # 3. 매출 합계\n        cursor.execute(\n            \"\"\"\n            SELECT SUM(TotalAmount) FROM Orders\n  \
+    \          WHERE  CAST(OrderDate AS DATE)=? AND StatusCode='DONE'\n              AND  ClosedAt=?\n            \"\"\",\n\
+    \            (batch_date, now),\n        )\n        row           = cursor.fetchone()\n        total_revenue = float(row[0])\
+    \ if row and row[0] else 0.0\n\n        # 4. 정산 이력\n        cursor.execute(\n            \"INSERT INTO ClosingHistory\"\
+    \n            \" (BatchDate,OperatorID,ClosedCount,TotalRevenue,ClosedAt)\"\n            \" VALUES (?,?,?,?,?)\",\n  \
+    \          (batch_date, operator_id, closed_count, total_revenue, now),\n        )\n        conn.commit()\n        return\
+    \ closed_count, total_revenue, 0\n\n    except Exception as exc:\n        conn.rollback()\n        # 실패 건수 조회\n      \
+    \  cursor.execute(\n            \"SELECT COUNT(*) FROM Orders\"\n            \" WHERE CAST(OrderDate AS DATE)=? AND StatusCode\
+    \ IN ('PAID','PROCESSING')\",\n            (batch_date,),\n        )\n        row          = cursor.fetchone()\n     \
+    \   failed_count = int(row[0]) if row else 0\n        return 0, 0.0, failed_count\n"

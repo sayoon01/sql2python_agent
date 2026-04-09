@@ -1,0 +1,23 @@
+INFO:     Application startup complete.
+17:11:37  WARNING   backend.services.converter.single — [glm-4.7-flash-q4km] 변환 실패: [glm-4.7-flash-q4km] LLM 호출 실패: 
+17:11:37  WARNING   backend.services.converter.single — [gemma3-27] 변환 실패: [gemma3-27] LLM 호출 실패: 
+17:11:37  WARNING   backend.services.converter.single — [qwen2.5coder-32b] 변환 실패: [qwen2.5coder-32b] LLM 호출 실패: 
+17:11:37  WARNING   backend.services.converter.compare — 비교 실패 — 모델 3개 모두 변환 실패
+INFO:     127.0.0.1:38086 - "POST /api/compare HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44778 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+17:16:28  WARNING   backend.services.converter.single — [glm-4.7-flash-q4km] 변환 실패: [glm-4.7-flash-q4km] LLM 호출 실패: 
+17:16:28  WARNING   backend.services.converter.single — [gemma3-27] 변환 실패: [gemma3-27] LLM 호출 실패: 
+17:16:28  WARNING   backend.services.converter.single — [qwen2.5coder-32b] 변환 실패: [qwen2.5coder-32b] LLM 호출 실패: 
+17:16:28  WARNING   backend.services.converter.compare — 비교 실패 — 모델 3개 모두 변환 실패
+INFO:     127.0.0.1:58010 - "POST /api/compare HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'backend/services/converter/compare.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [3585253]
+INFO:     Started server process [3589717]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+17:24:32  WARNING   backend.services.converter.single — [glm-4.7-flash-q4km] 변환 실패: [glm-4.7-flash-q4km] LLM 호출 실패: 
+17:26:20  INFO      httpx — HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+17:26:20  INFO      backend.services.converter.single — [gemma3-27] 완료 — 52844 tokens, 107748ms
