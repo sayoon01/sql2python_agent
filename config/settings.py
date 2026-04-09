@@ -16,30 +16,18 @@ class Settings(BaseSettings):
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
 
-    # ── DB 전환 스위치 ────────────────────────────────────
-    #   "mssql"      → pyodbc   (SQL Server)
-    #   "postgresql" → psycopg2 (PostgreSQL)
-    DB_MODE: Literal["mssql", "postgresql"] = "mssql"
-
-    # ── SQL Server ────────────────────────────────────────
-    MSSQL_SERVER:   str = "localhost"
-    MSSQL_PORT:     int = 1433
-    MSSQL_DATABASE: str = "mydb"
-    MSSQL_USERNAME: str = "sa"
-    MSSQL_PASSWORD: str = ""
-    MSSQL_DRIVER:   str = "ODBC Driver 17 for SQL Server"
-
-    # ── PostgreSQL ────────────────────────────────────────
-    PG_HOST:     str = "localhost"
-    PG_PORT:     int = 5432
-    PG_DATABASE: str = "mydb"
-    PG_USER:     str = "postgres"
-    PG_PASSWORD: str = ""
-
     # ── LLM ──────────────────────────────────────────────
     OLLAMA_BASE_URL:   str = Field(
         default="http://localhost:11434",
         description="Ollama 로컬 서버 (GLM, Gemma3, Qwen)",
+    )
+    OLLAMA_TIMEOUT_SECONDS: float = Field(
+        default=180.0,
+        description="Ollama 요청 타임아웃(초)",
+    )
+    OLLAMA_KEEP_ALIVE: str = Field(
+        default="10m",
+        description='Ollama keep_alive 값 (예: "10m")',
     )
 
     class Config:

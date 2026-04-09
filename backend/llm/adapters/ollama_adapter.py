@@ -43,9 +43,10 @@ class OllamaAdapter(BaseLLMAdapter):
                 {"role": "user",   "content": user},
             ],
             "stream": False,
+            "keep_alive": settings.OLLAMA_KEEP_ALIVE,
         }
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
                 resp = await client.post(
                     f"{self._base_url}/api/chat",
                     json=payload,

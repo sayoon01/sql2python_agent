@@ -3,15 +3,15 @@ backend/schemas/compare.py
 ===========================
 다중 모델 비교 요청/응답 Pydantic 스키마.
 """
-from typing import Literal, List, Optional
-from pydantic import BaseModel, Field
+from typing import List, Optional
+from pydantic import Field
 
+from backend.schemas import SchemaModel
 from backend.schemas.convert import ConvertResponse
 
 
-class CompareRequest(BaseModel):
+class CompareRequest(SchemaModel):
     sql_code:  str  = Field(..., min_length=10)
-    target_db: Literal["mssql", "postgresql"] = Field("mssql")
     model_ids: List[str] = Field(
         default=[
             "glm-4.7-flash-q4km",
@@ -23,7 +23,7 @@ class CompareRequest(BaseModel):
     )
 
 
-class ScoreDetail(BaseModel):
+class ScoreDetail(SchemaModel):
     """채점 항목별 점수."""
     correctness:     int   # /25 — 함수 구조·import·실행 가능성
     type_hints:      int   # /20 — 타입 힌트 완성도
@@ -36,13 +36,13 @@ class ScoreDetail(BaseModel):
     verdict:         str   # 한줄 평가
 
 
-class CompareResult(BaseModel):
+class CompareResult(SchemaModel):
     """모델 한 개의 변환 결과 + 점수."""
     convert:  ConvertResponse
     score:    ScoreDetail
 
 
-class CompareResponse(BaseModel):
+class CompareResponse(SchemaModel):
     success:         bool
     procedure_name:  str
     results:         List[CompareResult]

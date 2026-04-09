@@ -180,7 +180,6 @@ const singlePage = (() => {
   const RECENT_SQL_LIMIT = 5;
   // 상태
   let selectedModelId = CONFIG.models[0].id;
-  let selectedDb      = 'mssql';
   let outputData      = {};
   let activeTab       = 'main';
 
@@ -189,7 +188,6 @@ const singlePage = (() => {
     _renderExamples();
     _renderRecentSql();
     _bindModelCards();
-    _bindDbButtons();
   }
 
   function _renderExamples() {
@@ -260,16 +258,6 @@ const singlePage = (() => {
         card.classList.add('selected');
         selectedModelId = nextModelId;
         clearAll(); // 모델 변경 시 입력/출력 초기화
-      };
-    });
-  }
-
-  function _bindDbButtons() {
-    document.querySelectorAll('#s-db-seg .db-btn').forEach(btn => {
-      btn.onclick = () => {
-        document.querySelectorAll('#s-db-seg .db-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedDb = btn.dataset.db;
       };
     });
   }
@@ -358,7 +346,6 @@ const singlePage = (() => {
     try {
       const data = await api.convert({
         sql_code:               sql,
-        target_db:              selectedDb,
         model_id:               selectedModelId,
         include_tests:          document.getElementById('s-opt-tests').checked,
         include_fastapi_router: document.getElementById('s-opt-router').checked,
@@ -396,11 +383,8 @@ const singlePage = (() => {
    comparePage — 비교 페이지
    ══════════════════════════════════════════════════════════ */
 const comparePage = (() => {
-  let selectedDb = 'mssql';
-
   function init() {
     _renderExamplePills();
-    _bindDbButtons();
     _bindModelChecks();
   }
 
@@ -413,16 +397,6 @@ const comparePage = (() => {
       btn.textContent = ex.label;
       btn.onclick     = () => { document.getElementById('c-sql-input').value = ex.sql; };
       wrap.appendChild(btn);
-    });
-  }
-
-  function _bindDbButtons() {
-    document.querySelectorAll('#c-db-seg .db-btn').forEach(btn => {
-      btn.onclick = () => {
-        document.querySelectorAll('#c-db-seg .db-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedDb = btn.dataset.db;
-      };
     });
   }
 
@@ -475,7 +449,7 @@ const comparePage = (() => {
       const tags   = [
         ...(isFailed ? ['변환 실패'].map(t => `<span class="tag tag-warn">${utils.esc(t)}</span>`) : []),
         ...s.strengths.slice(0, 2).map(t => `<span class="tag tag-good">${utils.esc(t)}</span>`),
-        ...s.weaknesses.slice(0, 1).map(t => `<span class="tag tag-bad">${utils.esc(t)}</span>`),
+        ...s.weaknesses.slice(0, 2).map(t => `<span class="tag tag-bad">${utils.esc(t)}</span>`),
       ].join('');
 
       tbody.innerHTML += `
@@ -593,7 +567,6 @@ const comparePage = (() => {
     try {
       const data = await api.compare({
         sql_code:  sql,
-        target_db: selectedDb,
         model_ids: modelIds,
       });
       _renderResults(data);

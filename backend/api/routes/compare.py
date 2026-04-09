@@ -19,6 +19,5 @@ async def compare(req: CompareRequest) -> CompareResponse:
     동일한 SQL 프로시저를 여러 모델로 동시 변환 후 품질 비교.
 
     - **model_ids**: 비교할 모델 ID 목록 (2개 이상)
-    - **target_db**: `mssql` | `postgresql`
     """
     return await compare_models(req)

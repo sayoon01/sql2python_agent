@@ -31,7 +31,6 @@ async def convert_single(req: ConvertRequest) -> ConvertResponse:
     proc_name = extract_procedure_name(req.sql_code)
 
     system = build_system_prompt(
-        target_db=req.target_db,
         include_tests=req.include_tests,
         include_router=req.include_fastapi_router,
     )
@@ -45,7 +44,6 @@ async def convert_single(req: ConvertRequest) -> ConvertResponse:
         return ConvertResponse(
             success=False,
             procedure_name=proc_name,
-            target_db=req.target_db,
             model_id=req.model_id,
             python_code="",
             line_count=0,
@@ -60,7 +58,6 @@ async def convert_single(req: ConvertRequest) -> ConvertResponse:
     return ConvertResponse(
         success=True,
         procedure_name=proc_name,
-        target_db=req.target_db,
         model_id=req.model_id,
         python_code=sections["main"],
         test_code=sections["test"],

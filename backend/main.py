@@ -28,7 +28,7 @@ log = get_logger(__name__)
 # ── FastAPI 앱 ────────────────────────────────────────────
 app = FastAPI(
     title="SQL2Python Agent",
-    description="MS SQL 프로시저 → Python 코드 변환 API (pyodbc / psycopg2 지원)",
+    description="MS SQL 프로시저 → Python 코드 변환 API",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",

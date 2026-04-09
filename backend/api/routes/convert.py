@@ -19,7 +19,6 @@ async def convert(req: ConvertRequest) -> ConvertResponse:
     MS SQL 저장 프로시저 → Python 코드 변환 (단일 모델).
 
     - **model_id**: `glm-4.7-flash-q4km` | `gemma3-27` | `qwen2.5coder-32b`
-    - **target_db**: `mssql` (pyodbc) | `postgresql` (psycopg2)
     - **include_tests**: pytest 코드 포함
     - **include_fastapi_router**: FastAPI 라우터 포함
     """

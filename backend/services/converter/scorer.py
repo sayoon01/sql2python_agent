@@ -27,6 +27,44 @@ def _has_ast_function(tree: ast.AST) -> bool:
     return any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in ast.walk(tree))
 
 
+def _detect_tsql_residue(code: str) -> list[str]:
+    findings: list[str] = []
+    residue_patterns = [
+        (r"\bBEGIN\s+TRY\b", "T-SQL BEGIN TRY 잔재"),
+        (r"\bBEGIN\s+CATCH\b", "T-SQL BEGIN CATCH 잔재"),
+        (r"\bBEGIN\s+TRAN\b", "T-SQL 트랜잭션 구문 잔재"),
+        (r"@@ERROR", "T-SQL @@ERROR 사용"),
+        (r"@@ROWCOUNT", "T-SQL @@ROWCOUNT 사용"),
+        (r"\bSET\s+@\w+", "T-SQL 변수 대입 잔재"),
+        (r"\bPRINT\s+'", "T-SQL PRINT 잔재"),
+        (r"ERROR_LINE\(\)", "SQL Server 오류 함수 잔재"),
+        (r"ERROR_MESSAGE\(\)", "SQL Server 오류 함수 잔재"),
+    ]
+    for pattern, label in residue_patterns:
+        if re.search(pattern, code, re.IGNORECASE):
+            findings.append(label)
+    return findings
+
+
+def _detect_unrealistic_db_patterns(code: str) -> list[str]:
+    findings: list[str] = []
+    patterns = [
+        (r"cursor\.execute\(\s*[\"']BEGIN\s+TRAN", "DB 드라이버에서 직접 BEGIN TRAN 실행"),
+        (
+            r"cursor\.connection\.getinfo\(pyodbc\.SQL_DIAG_SQLSTATE\)",
+            "pyodbc 상태코드로 SQL 성공 여부 판정",
+        ),
+        (
+            r"cursor\.execute\(\s*[\"']SELECT\s+ERROR_LINE\(\)",
+            "예외 처리 중 SQL Server 오류 함수 직접 호출",
+        ),
+    ]
+    for pattern, label in patterns:
+        if re.search(pattern, code, re.IGNORECASE):
+            findings.append(label)
+    return findings
+
+
 def score_code(model_id: str, code: str) -> ScoreDetail:
     """Python 코드를 채점하여 ScoreDetail 을 반환합니다."""
 
@@ -89,7 +127,15 @@ def score_code(model_id: str, code: str) -> ScoreDetail:
     if avg_len < 80:                                        r += 5   # 줄 길이
     readability = min(r, 15)
 
+    tsql_residue = _detect_tsql_residue(code)
+    unrealistic_db_patterns = _detect_unrealistic_db_patterns(code)
+    structural_penalty = min(
+        len(tsql_residue) * 8 + len(unrealistic_db_patterns) * 6,
+        40,
+    )
+
     total = correctness + type_hints + sql_safety + error_handling + readability
+    total = max(total - structural_penalty, 0)
     if syntax_error:
         total = min(total, 39)
 
@@ -98,6 +144,12 @@ def score_code(model_id: str, code: str) -> ScoreDetail:
 
     if syntax_error:
         weaknesses.append(f"Python 문법 오류: {syntax_error}")
+
+    if tsql_residue:
+        weaknesses.append("T-SQL 구문 잔재")
+
+    if unrealistic_db_patterns:
+        weaknesses.append("비현실적 DB 처리 패턴")
 
     if type_hints >= 15:      strengths.append("타입 힌트 완성")
     else:                     weaknesses.append("타입 힌트 부족")

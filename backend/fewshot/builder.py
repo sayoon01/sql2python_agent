@@ -5,7 +5,7 @@ backend/fewshot/builder.py
 
 역할:
   - fewshot/examples.yaml 의 데이터를 읽어서
-  - target_db / 옵션에 맞는 system prompt 를 조립합니다.
+  - MSSQL 고정 규칙과 옵션에 맞는 system prompt 를 조립합니다.
 
 규칙:
   - 이 파일은 문자열 조립만 합니다.
@@ -26,8 +26,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 class FewShotExample:
     title: str
     sql: str
-    python_mssql: str
-    python_pg: str
+    python_code: str
 
 
 def _load_examples() -> list[FewShotExample]:
@@ -41,42 +40,29 @@ def _load_examples() -> list[FewShotExample]:
 ALL_EXAMPLES: list[FewShotExample] = _load_examples()
 
 
-# ── DB별 드라이버 정보 ────────────────────────────────────
+# ── 고정 타겟 환경 정보 ───────────────────────────────────
 
 _DB_META = {
-    "mssql": {
-        "name": "SQL Server",
-        "driver": "pyodbc",
-        "conn_type": "pyodbc.Connection",
-        "placeholder": "?",
-        "scope_identity": "SELECT CAST(SCOPE_IDENTITY() AS INT) AS NewID;",
-        "import": "import pyodbc",
-        "naming": "테이블/컬럼명 원본 유지",
-    },
-    "postgresql": {
-        "name": "PostgreSQL",
-        "driver": "psycopg2",
-        "conn_type": "psycopg2.extensions.connection",
-        "placeholder": "%s",
-        "scope_identity": "RETURNING <컬럼명>  ← PostgreSQL RETURNING 절 사용",
-        "import": "import psycopg2\nimport psycopg2.extras",
-        "naming": "테이블/컬럼명 snake_case 로 변환",
-    },
+    "name": "SQL Server",
+    "driver": "DB-API 2.0 호환 커넥션",
+    "conn_type": "conn 객체",
+    "placeholder": "?",
+    "scope_identity": "SELECT CAST(SCOPE_IDENTITY() AS INT) AS NewID;",
+    "import": "필요한 표준 라이브러리만 import",
+    "naming": "테이블/컬럼명 원본 유지",
 }
 
 
-def _format_example(ex: FewShotExample, target_db: str) -> str:
+def _format_example(ex: FewShotExample) -> str:
     """FewShotExample 하나를 prompt 텍스트로 변환합니다."""
-    python_code = ex.python_pg if target_db == "postgresql" else ex.python_mssql
     return (
         f"### 예시: {ex.title}\n\n"
         f"[SQL 입력]\n{ex.sql}\n\n"
-        f"[Python 출력]\n{python_code}"
+        f"[Python 출력]\n{ex.python_code}"
     )
 
 
 def build_system_prompt(
-    target_db: str,
     include_tests: bool,
     include_router: bool,
 ) -> str:
@@ -84,16 +70,15 @@ def build_system_prompt(
     LLM system prompt 를 조립합니다.
 
     Args:
-        target_db: 'mssql' 또는 'postgresql'
         include_tests: pytest 코드 포함 여부
         include_router: FastAPI 라우터 포함 여부
 
     Returns:
         완성된 system prompt 문자열
     """
-    meta = _DB_META.get(target_db, _DB_META["mssql"])
+    meta = _DB_META
     fewshot_block = "\n\n---\n\n".join(
-        _format_example(ex, target_db) for ex in ALL_EXAMPLES
+        _format_example(ex) for ex in ALL_EXAMPLES
     )
 
     # 추가 섹션 지시
@@ -112,7 +97,7 @@ def build_system_prompt(
         extra_sections += (
             "\n\n## 추가 섹션: [FASTAPI ROUTER]\n"
             "`[FASTAPI ROUTER]` 헤더 후 FastAPI APIRouter 코드를 작성하세요.\n"
-            "- `Depends(get_db_conn)` 패턴으로 DB 주입합니다.\n"
+            "- 엔드포인트 함수는 `conn` 인자를 직접 받는 구조로 작성하세요.\n"
             "- Pydantic 요청/응답 스키마를 함께 정의합니다.\n"
             "- 요청/응답 스키마 키는 메인 함수 반환 구조와 일치해야 합니다."
         )
@@ -140,8 +125,8 @@ def build_system_prompt(
 
 ## 타겟 환경
 - DB: {meta['name']}
-- Python 드라이버: {meta['driver']}
-- 커넥션 타입 힌트: {meta['conn_type']}
+- Python 실행 방식: {meta['driver']}
+- 커넥션 입력 형태: {meta['conn_type']}
 - SQL 파라미터 플레이스홀더: `{meta['placeholder']}`  ← f-string 절대 금지
 - SCOPE_IDENTITY 대체: {meta['scope_identity']}
 - 네이밍 규칙: {meta['naming']}
@@ -153,11 +138,13 @@ def build_system_prompt(
     3. 응답은 설명 없이 실행 가능한 Python 함수 코드만 출력합니다.
     4. 필요한 모든 import는 누락 없이 포함합니다.
     5. 존재가 불명확한 프로젝트 내부 모듈은 임의로 import하지 않습니다.
+    5-1. 특정 드라이버(`pyodbc`, `pymssql`) import를 강제하지 말고, 전달받은 `conn` 객체의 `cursor/commit/rollback`만 사용합니다.
 
     ### [함수 및 반환]
     6. 프로시저명은 snake_case 함수명으로 변환합니다.
     7. `@Param`은 Python 함수 인자와 타입 힌트로 변환합니다.
     8. 타입 힌트는 가능한 범위에서 적용하며, nullable인 경우에만 `Optional[...]`을 사용합니다.
+    8-1. `conn` 인자는 구체 드라이버 타입 힌트 대신 `Any` 또는 타입 힌트 생략을 사용합니다.
     9. OUTPUT 파라미터는 return value(dict)로 변환합니다.
 
     ### [DB 실행 규칙]
@@ -196,10 +183,12 @@ def build_user_prompt(sql_code: str) -> str:
     return f"다음 MS SQL 프로시저를 변환하세요:\n\n{sql_code}"
 
 
-def build_eval_prompt(results_summary: str) -> str:
+def build_eval_prompt(results_summary: str, winner_label: str, winner_score: int) -> str:
     """비교 평가 종합 코멘트 생성용 프롬프트."""
     return f"""\
 아래는 동일한 MS SQL 프로시저를 여러 LLM으로 변환한 결과 요약입니다.
+점수 기준 공식 우승 모델은 반드시 {winner_label} ({winner_score}/100) 입니다.
+이 사실을 뒤집거나 다른 모델을 1위라고 쓰면 안 됩니다.
 각 모델의 총점, 응답 시간, 강점/약점을 분석하여
 2~3문장의 한국어 종합 평가와 실용적 추천을 작성하세요.
 
