@@ -1,3 +1,7 @@
+
+<img width="1965" height="1041" alt="스크린샷 2026-04-17 131157" src="https://github.com/user-attachments/assets/260f5a0b-3cd0-42c8-9660-21c7306899a1" />
+<img width="1907" height="927" alt="스크린샷 2026-04-17 131206" src="https://github.com/user-attachments/assets/450704ac-005f-4263-82e9-249065d8f6b2" />
+
 # SQL2Python Agent v2
 
 MS SQL Server 저장 프로시저를 Python 함수 코드로 변환하고, 여러 LLM 결과를 비교 평가하는 FastAPI 기반 프로젝트입니다.
